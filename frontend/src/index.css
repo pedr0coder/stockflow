@@ -1,0 +1,93 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+/**
+ * Design System do StockFlow — tokens.
+ *
+ * Tailwind v4 é configuração CSS-first: a fonte única de verdade do tema é este
+ * bloco `@theme`, não um objeto JavaScript. Não existe `tailwind.config.js`
+ * neste projeto, e isso é deliberado (docs/06-mvp-e-telas.md §6.4).
+ *
+ * Cores em OKLCH e não em HSL ou HEX: em OKLCH a mesma variação de luminosidade
+ * é percebida como a mesma variação pelo olho, então uma paleta derivada por
+ * cálculo sai consistente. Em HSL, amarelo e azul com o mesmo `L` parecem ter
+ * brilhos completamente diferentes.
+ *
+ * A paleta é neutra com UM acento. Sem gradiente decorativo.
+ * Os componentes entram na Fase 3; aqui ficam apenas os tokens.
+ */
+@theme {
+  /* ── Superfícies e texto ──────────────────────────────────────────────── */
+  --color-bg: oklch(100% 0 0);
+  --color-surface: oklch(98.5% 0.002 247);
+  --color-border: oklch(92.9% 0.004 247);
+  --color-text: oklch(21% 0.006 285);
+  --color-text-muted: oklch(55.2% 0.014 285);
+
+  /* ── Acento ───────────────────────────────────────────────────────────── */
+  --color-primary: oklch(54.6% 0.215 262);
+  --color-primary-fg: oklch(100% 0 0);
+
+  /* ── Semântica ────────────────────────────────────────────────────────── */
+  /* Usada de forma consistente em tabela, badge e dashboard:
+     success = entrada, warning = estoque baixo ou ajuste, danger = saída ou
+     sem estoque. Cor nunca é o único portador da informação: todo badge
+     também tem rótulo em texto (§8.8 de acessibilidade). */
+  --color-success: oklch(59.6% 0.145 163);
+  --color-warning: oklch(68.1% 0.162 75);
+  --color-danger: oklch(57.7% 0.215 27);
+
+  /* ── Tipografia ───────────────────────────────────────────────────────── */
+  /* Monoespaçada para SKU, quantidade e ID: número em coluna de tabela precisa
+     de largura fixa para os dígitos alinharem na vertical. */
+  --font-sans:
+    'Inter var', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'Roboto Mono', monospace;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+
+  /* ── Raio ─────────────────────────────────────────────────────────────── */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+
+  /* ── Sombra ───────────────────────────────────────────────────────────── */
+  /* Sombra marca elevação REAL: sm para o que flutua pouco, md para dropdown
+     e popover, lg para modal. Card estático não recebe sombra, recebe borda de
+     1px. É o que evita o visual de "painel genérico cheio de cards flutuando". */
+  --shadow-sm: 0 1px 2px 0 oklch(21% 0.006 285 / 0.05);
+  --shadow-md: 0 4px 12px -2px oklch(21% 0.006 285 / 0.1);
+  --shadow-lg: 0 16px 40px -8px oklch(21% 0.006 285 / 0.18);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* `:focus-visible` nunca é removido: é o que torna o app navegável por
+     teclado (docs/06-mvp-e-telas.md §6.6). */
+  :focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  /* Dígito com largura fixa em toda tabela, para as colunas numéricas
+     alinharem sem fonte monoespaçada no texto inteiro. */
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+}
