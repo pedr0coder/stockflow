@@ -1,0 +1,35 @@
+{
+  /* Arquivos de ferramenta: executam no Node, não no navegador.
+
+     `types: ["node"]` é explícito. Antes, os tipos do Node chegavam por acaso,
+     através de uma referência interna do Vite resolvida em um `node_modules` de
+     diretório superior. Isso funcionava na máquina de desenvolvimento e falhava
+     no CI, onde esse diretório não existe. Declarar a dependência e pedir o tipo
+     pelo nome elimina o acaso. */
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "strict": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+
+    "types": ["node"],
+
+    "composite": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo"
+  },
+  "include": ["vite.config.ts"]
+}
