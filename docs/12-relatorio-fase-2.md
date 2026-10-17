@@ -214,12 +214,95 @@ Ditas aqui e repetidas no README, para que não passem como resolvidas.
    devDependencies. A imagem multi-stage é da Fase 8.
 4. **O rate limiting não está configurado.** O `@nestjs/throttler` está instalado, mas ele
    protege endpoints de autenticação, que não existem ainda.
-5. **O CI nunca rodou em um runner do GitHub.** Não há remoto configurado. O arquivo está
-   escrito para executar exatamente os mesmos scripts verificados localmente, mas isso é
-   expectativa, não resultado. Será confirmado no primeiro push.
+5. **O CI ainda não teve execução verde.** A primeira execução reprovou no lint do
+   frontend, a causa raiz foi identificada e corrigida, mas a correção ainda não foi
+   confirmada por uma execução completa no runner. Detalhes em §12.8.
 6. **Nenhum teste E2E.** Playwright é da Fase 7, quando houver fluxo a percorrer.
 
-## 12.8 Próxima etapa
+## 12.8 Primeira execução do CI
+
+O pipeline foi executado pela primeira vez no push inicial para o repositório remoto.
+
+### Resultado
+
+| Job        | Resultado            |
+| ---------- | -------------------- |
+| Segredos   | Passou               |
+| Backend    | Passou               |
+| Formatação | Passou               |
+| Frontend   | **Reprovou no lint** |
+
+Os passos de typecheck, teste e build do frontend não chegaram a executar, porque o lint
+veio antes e falhou.
+
+```
+frontend/vite.config.ts
+  21:7   error  Unsafe assignment of an error typed value       @typescript-eslint/no-unsafe-assignment
+  21:12  error  Unsafe call of a type that could not be resolved @typescript-eslint/no-unsafe-call
+  46:9   error  Unsafe assignment of an error typed value        @typescript-eslint/no-unsafe-assignment
+  46:25  error  Unsafe member access .env on a type that cannot be resolved  @typescript-eslint/no-unsafe-member-access
+```
+
+### Causa raiz
+
+As duas linhas apontadas usam API do Node: a 21 chama `fileURLToPath` e a 46 lê
+`process.env`. O pacote `frontend` **usava essas APIs sem declarar `@types/node`**.
+
+O Vite declara `@types/node` como peer dependency **opcional**, e o npm não instala peer
+opcional. Mesmo assim o tipo chegava, por um caminho indireto: o
+`vite/dist/node/index.d.ts` traz um `/// <reference types="node" />`, e o TypeScript
+resolve essa referência subindo de diretório em diretório à procura de
+`node_modules/@types/node`.
+
+Na máquina de desenvolvimento ele encontrava um nível acima, no `node_modules` da **raiz
+do repositório**, onde o `@types/node` existe como dependência transitiva do Husky e do
+commitlint. No runner, o job do frontend roda `npm ci` apenas dentro de `frontend/`, e o
+`node_modules` da raiz nunca é criado: a busca sobe até a raiz do disco e falha. Sem o
+tipo, `fileURLToPath` e `process` passam a ter tipo não resolvido, e as quatro regras
+disparam.
+
+Ou seja, não é diferença entre Windows e Linux. É diferença de layout de diretório entre
+a máquina de desenvolvimento e o job isolado, e o defeito real é um pacote que dependia de
+um tipo que ele não declarava.
+
+**Achado adicional:** o typecheck também falharia, com `TS2591` nas mesmas duas linhas. O
+lint apenas chegou primeiro. A falha era maior do que o job conseguiu mostrar.
+
+### Reprodução
+
+O `HEAD` foi exportado para um diretório limpo, sem nenhum `node_modules`, e o comando do
+CI foi executado ali. Os quatro erros reapareceram nas mesmas linhas e colunas, o que
+confirma a causa antes de qualquer alteração.
+
+### Correção
+
+Nenhuma regra desativada, nenhum `any`, nenhuma supressão.
+
+1. **`@types/node@~24.19.2` declarado no `frontend`**, na mesma versão do backend e do
+   runtime. Tipar API do Node 26 enquanto se executa Node 24 deixaria compilar código que
+   quebra em execução.
+2. **`tsconfig` separado em dois projetos.** Instalar o pacote resolveria o CI, mas criaria
+   um problema novo: `process.env` passaria a compilar dentro de um componente React e
+   falharia no navegador. `tsconfig.app.json` cobre `src/` com `types: ["vite/client"]`, e
+   `tsconfig.node.json` cobre `vite.config.ts` com `types: ["node"]`. O `tsconfig.json`
+   virou arquivo de solução com as duas referências, e os scripts passaram a usar
+   `tsc -b --noEmit`.
+
+Teste negativo confirmando a garantia, já com `@types/node` instalado no pacote: um arquivo
+em `src/` que usa `process.env` ou `node:url` falha a compilação com `TS2591`.
+
+Nenhum arquivo de código-fonte foi alterado. O `vite.config.ts` permanece idêntico e o
+bundle saiu com os mesmos hashes, o que confirma que só a resolução de tipos mudou.
+
+### Estado
+
+O job completo do frontend foi reproduzido em diretório limpo, com `npm ci` apenas em
+`frontend/`, e os quatro passos passaram. Backend e raiz continuam verdes localmente.
+
+Isso **não** é confirmação de que o pipeline está corrigido. A correção só será dada como
+válida depois de uma execução completa e verde no runner do GitHub.
+
+## 12.9 Próxima etapa
 
 **Fase 3 — Design System e Shell**, conforme [09-roadmap.md](09-roadmap.md): tokens
 aplicados em componentes, `AppShell` com sidebar colapsável e header, componentes
