@@ -1,0 +1,38 @@
+{
+  "compilerOptions": {
+    /* Alinhado ao TypeScript 6: nada de `moduleResolution: node10` nem de
+       `baseUrl`, ambos deprecados. `bundler` é a resolução correta aqui porque
+       quem resolve os imports é o Vite, não o Node. */
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+
+    "useDefineForClassFields": true,
+    "allowImportingTsExtensions": false,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+
+    /* Mesmo conjunto rígido do backend: uma só régua de tipagem no repositório. */
+    "strict": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+
+    "types": ["vite/client"]
+  },
+  "include": ["src", "vite.config.ts"]
+}
