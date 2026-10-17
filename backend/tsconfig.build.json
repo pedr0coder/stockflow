@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    /* O TypeScript 6 passou a exigir `rootDir` explícito quando há `outDir`.
+       Ele fica só aqui, e não no tsconfig.json base, porque o base também cobre
+       `test/` e `prisma/` para efeito de typecheck: fixar rootDir lá
+       acusaria esses arquivos como fora da raiz. O build compila apenas `src`. */
+    "rootDir": "./src"
+  },
+  "exclude": ["node_modules", "dist", "test", "prisma", "**/*.spec.ts", "**/*.int-spec.ts"]
+}

@@ -1,0 +1,9 @@
+# Cliente gerado pelo Prisma: é artefato de build, reconstruído por
+# `npm run prisma:generate`. Versioná-lo criaria conflito em todo pull.
+/src/generated/
+
+# Artefatos locais
+dist/
+coverage/
+*.tsbuildinfo
+.eslintcache

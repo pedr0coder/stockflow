@@ -1,0 +1,48 @@
+{
+  "compilerOptions": {
+    /* TypeScript 6 deprecou `moduleResolution: node10` e `baseUrl`. Em vez de
+       silenciar com `ignoreDeprecations`, a configuração foi modernizada:
+         - `module: node20` usa a resolução que o Node 24 realmente aplica e
+           emite CommonJS, porque este package.json não declara "type": "module"
+           (é o que o NestJS espera);
+         - `paths` funciona sem `baseUrl` desde o TS 5: os caminhos passam a ser
+           relativos a este arquivo, que é mais previsível que a raiz implícita. */
+    "module": "node20",
+    "target": "ES2023",
+    "lib": ["ES2023"],
+
+    /* O NestJS injeta dependência por construtor lendo o tipo em tempo de
+       execução. Sem estes dois flags o container não sabe o que injetar. */
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+
+    "declaration": false,
+    "removeComments": true,
+    "sourceMap": true,
+    "outDir": "./dist",
+    "incremental": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "forceConsistentCasingInFileNames": true,
+
+    /* strict completo, mais as quatro opções que não vêm no strict e que são
+       justamente as que pegam bug de verdade em código com banco e HTTP:
+       índice de array possivelmente undefined, propriedade opcional recebendo
+       undefined explícito, override sem declaração e fallthrough em switch. */
+    "strict": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noFallthroughCasesInSwitch": true,
+
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src/**/*", "test/**/*", "prisma/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
