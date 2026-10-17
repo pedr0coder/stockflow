@@ -1,0 +1,19 @@
+node_modules
+dist
+build
+coverage
+
+# Lockfile: diff e conflito não são revisáveis à mão.
+package-lock.json
+
+# Gerado pelo Prisma: artefato de build, reconstruído a cada `prisma generate`.
+backend/src/generated
+
+# Gerado pelo Prisma CLI: SQL que não deve ser reformatado depois de aplicado.
+backend/prisma/migrations
+
+# Copiado pelo CLI do shadcn/ui: manter igual ao upstream facilita atualizar.
+frontend/src/components/ui
+
+playwright-report
+test-results

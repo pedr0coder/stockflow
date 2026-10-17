@@ -1,0 +1,37 @@
+{
+  "name": "stockflow",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Plataforma de gerenciamento de estoque para pequenas e medias empresas",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24.15.0",
+    "npm": ">=11.0.0"
+  },
+  "scripts": {
+    "prepare": "husky",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "npm --prefix backend run lint && npm --prefix frontend run lint",
+    "typecheck": "npm --prefix backend run typecheck && npm --prefix frontend run typecheck",
+    "test": "npm --prefix backend run test && npm --prefix frontend run test",
+    "build": "npm --prefix backend run build && npm --prefix frontend run build",
+    "install:all": "npm install && npm --prefix backend install && npm --prefix frontend install"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,mjs,cjs}": [
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml,css}": [
+      "prettier --write"
+    ]
+  },
+  "devDependencies": {
+    "@commitlint/cli": "~21.2.3",
+    "@commitlint/config-conventional": "~21.2.3",
+    "husky": "~9.1.7",
+    "lint-staged": "~17.6.0",
+    "prettier": "~3.9.10"
+  }
+}

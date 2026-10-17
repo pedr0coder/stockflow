@@ -1,0 +1,58 @@
+# Dependências
+node_modules/
+.pnp
+.pnp.js
+
+# Variáveis de ambiente (nunca versionadas)
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Build
+dist/
+build/
+*.tsbuildinfo
+
+# Testes e cobertura
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor, ferramentas locais e sistema operacional
+#
+# Configuração de ferramenta é escolha de cada pessoa e não descreve o produto.
+.idea/
+.fleet/
+.zed/
+.claude/
+.cursor/
+.aider*
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+.DS_Store
+Thumbs.db
+*.swp
+
+# Cache de ferramentas
+.eslintcache
+.cache/
+.vite/
+.turbo/
+
+# Prisma
+# As migrations SÃO versionadas de propósito: elas são o histórico do esquema.
+# Apenas artefatos locais ficam de fora.
+backend/prisma/*.db
+backend/prisma/*.db-journal

@@ -1,0 +1,20 @@
+# Normalização de fim de linha.
+#
+# O repositório é desenvolvido no Windows e executado em containers Linux.
+# Sem isto, o Git converteria os scripts para CRLF no checkout e o
+# docker-entrypoint-initdb.d do Postgres falharia com "bad interpreter".
+* text=auto eol=lf
+
+*.sh      text eol=lf
+Dockerfile* text eol=lf
+*.cmd     text eol=crlf
+*.bat     text eol=crlf
+
+# Binários
+*.png     binary
+*.jpg     binary
+*.ico     binary
+*.woff2   binary
+
+# Lockfile: não faz sentido revisar diff nem resolver conflito à mão.
+package-lock.json -diff linguist-generated=true
