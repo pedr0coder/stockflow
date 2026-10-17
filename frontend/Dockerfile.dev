@@ -1,0 +1,20 @@
+# Imagem de DESENVOLVIMENTO do frontend: serve o Vite dev server com HMR.
+#
+# A de produção faz build estático e serve por um servidor web. É da Fase 8.
+FROM node:24.15.0-bookworm-slim
+
+WORKDIR /app
+
+# Manifestos primeiro: editar um componente não refaz o `npm ci`.
+COPY package.json package-lock.json ./
+
+RUN npm ci
+
+COPY . .
+
+EXPOSE 5173
+
+# `--host` para escutar em 0.0.0.0. Sem isso o Vite escuta só em localhost,
+# que dentro do container é inalcançável a partir da máquina do usuário mesmo
+# com a porta publicada.
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

@@ -1,0 +1,17 @@
+# node_modules do host NUNCA entra na imagem: o binário pré-compilado do
+# @node-rs/argon2 é específico de plataforma (win32-x64 aqui, linux-x64 lá).
+node_modules
+dist
+coverage
+
+# Cliente do Prisma é gerado dentro da imagem, para a plataforma dela.
+src/generated
+
+# Segredo nunca entra em imagem.
+.env
+.env.*
+!.env.example
+
+*.log
+*.tsbuildinfo
+.eslintcache

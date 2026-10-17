@@ -1,0 +1,46 @@
+# Imagem de DESENVOLVIMENTO da API.
+#
+# Não é imagem de produção. A de produção é multi-stage, roda como usuário sem
+# privilégio, não carrega devDependencies e é assunto da Fase 8. Esta aqui
+# existe para que `docker compose up` entregue o sistema funcionando a quem
+# clonar o repositório.
+#
+# bookworm-slim (glibc) e não alpine (musl): o @node-rs/argon2 publica binário
+# para as duas libc, mas glibc é o alvo mais testado da distribuição NAPI e
+# evita uma classe inteira de problema de link em dependência nativa futura.
+# Ver ADR-0004.
+FROM node:24.15.0-bookworm-slim
+
+# Necessários pelo entrypoint: `nc` espera o banco aceitar conexão e o
+# OpenSSL é exigido pelo schema-engine do Prisma.
+RUN apt-get update \
+  && apt-get install --no-install-recommends --yes netcat-openbsd openssl \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Dependências em camada própria, antes do código.
+#
+# O Docker invalida o cache a partir da primeira camada que mudou. Copiando só
+# os manifestos aqui, editar um arquivo de `src/` não refaz o `npm ci`, que é
+# de longe o passo mais caro.
+COPY package.json package-lock.json ./
+
+# `npm ci` e não `npm install`: instala exatamente o que está no lock, falha se
+# o lock divergir do package.json e não reescreve o lock. É o comando correto
+# para build reprodutível, em container e em CI.
+RUN npm ci
+
+COPY . .
+
+# O cliente é gerado DENTRO da imagem porque ele carrega um binário específico
+# da plataforma. O gerado no Windows não serve aqui.
+RUN npx prisma generate
+
+EXPOSE 3000
+
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["npm", "run", "dev"]

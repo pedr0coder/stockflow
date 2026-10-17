@@ -1,0 +1,100 @@
+# StockFlow — ambiente de desenvolvimento
+#
+# Dois modos de uso, ambos suportados de propósito:
+#
+#   Completo   docker compose up
+#              Sobe banco, API e frontend. É o `git clone && docker compose up`
+#              que torna o repositório executável por qualquer pessoa.
+#
+#   Híbrido    docker compose up -d db
+#              Sobe só o banco; API e frontend rodam no host com `npm run dev`.
+#              É o modo do dia a dia: HMR mais rápido e depurador do editor
+#              funcionando sem atachar a processo em container.
+#
+# Imagem de produção multi-stage é assunto da Fase 8. Os Dockerfile.dev aqui
+# existem para desenvolvimento e não devem ser publicados.
+
+name: stockflow
+
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: stockflow-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?defina POSTGRES_USER no .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      POSTGRES_DB: ${POSTGRES_DB:-stockflow}
+      # Nome do banco de teste criado pelo script de init.
+      POSTGRES_TEST_DB: ${POSTGRES_TEST_DB:-stockflow_test}
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      # Roda uma única vez, no primeiro boot com volume vazio.
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # Sem isto, o backend sobe antes do banco aceitar conexão e morre no boot.
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: stockflow-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      # Dentro da rede do compose o host do banco é o nome do serviço, não localhost.
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-stockflow}?schema=public
+      DATABASE_URL_TEST: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_TEST_DB:-stockflow_test}?schema=public
+      JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no .env}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?defina JWT_REFRESH_SECRET no .env}
+      JWT_ACCESS_TTL: ${JWT_ACCESS_TTL:-15m}
+      JWT_REFRESH_TTL: ${JWT_REFRESH_TTL:-7d}
+      CORS_ORIGINS: http://localhost:5173
+      LOG_LEVEL: ${LOG_LEVEL:-debug}
+    ports:
+      - '3000:3000'
+    volumes:
+      - ./backend:/app
+      # Volume anônimo por cima do bind mount: mantém o node_modules DO CONTAINER.
+      # Sem isto, o node_modules do Windows seria montado aqui e o binário
+      # pré-compilado do @node-rs/argon2 (win32-x64) não carregaria em linux-x64.
+      # Ver ADR-0004 e docs/11-plano-fase-2.md §11.2 bloco H.
+      - /app/node_modules
+      - /app/src/generated
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: stockflow-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      # Caminho relativo: o navegador chama a própria origem do Vite e o dev
+      # server repassa. Assim não há requisição cross-origin em desenvolvimento
+      # e o cookie httpOnly do refresh (ADR-0005) é tratado como same-site.
+      VITE_API_URL: /api/v1
+      # Para onde o proxy do Vite repassa. Dentro da rede do compose,
+      # "localhost" seria o próprio container do frontend.
+      VITE_PROXY_TARGET: http://backend:3000
+    ports:
+      - '5173:5173'
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
+volumes:
+  db-data:
+    name: stockflow-db-data
