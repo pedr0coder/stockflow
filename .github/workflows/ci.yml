@@ -1,0 +1,208 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancela execuções antigas do mesmo branch: um push novo torna a execução
+# anterior irrelevante, e deixá-la rodando só ocupa fila.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Versão única em todo o pipeline. O mesmo número está em .nvmrc e no
+  # `engines` dos dois package.json.
+  NODE_VERSION: '24.15.0'
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────
+  # Verifica que o .env nunca foi commitado. Roda primeiro e é barato: se um
+  # segredo entrou no repositório, nada mais importa até isso ser resolvido.
+  # ─────────────────────────────────────────────────────────────────────────
+  secrets-check:
+    name: Segredos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Nenhum arquivo .env versionado
+        run: |
+          if git ls-files --error-unmatch .env 2>/dev/null; then
+            echo "::error::.env está versionado. Remova-o do índice e troque os segredos."
+            exit 1
+          fi
+          # `.env.example` é o único permitido, e sem valor preenchido.
+          tracked=$(git ls-files | grep -E '(^|/)\.env' | grep -v '\.env\.example$' || true)
+          if [ -n "$tracked" ]; then
+            echo "::error::arquivos de ambiente versionados: $tracked"
+            exit 1
+          fi
+          echo "ok: apenas .env.example está versionado"
+
+      - name: .env.example não traz valor de segredo
+        run: |
+          # Toda chave que contenha SECRET, PASSWORD ou TOKEN precisa estar vazia.
+          if grep -nE '^[A-Z_]*(SECRET|PASSWORD|TOKEN)[A-Z_]*=.+' .env.example; then
+            echo "::error::.env.example tem valor preenchido em uma chave sensível"
+            exit 1
+          fi
+          echo "ok: .env.example não contém valor de segredo"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    needs: secrets-check
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: stockflow
+          POSTGRES_PASSWORD: ci_only_not_a_real_secret
+          POSTGRES_DB: stockflow_test
+        ports:
+          - 5432:5432
+        # Sem healthcheck, os passos começariam antes de o banco aceitar
+        # conexão e a suíte falharia de forma intermitente.
+        options: >-
+          --health-cmd "pg_isready -U stockflow -d stockflow_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      NODE_ENV: test
+      PORT: '3000'
+      DATABASE_URL: postgresql://stockflow:ci_only_not_a_real_secret@localhost:5432/stockflow_test?schema=public
+      DATABASE_URL_TEST: postgresql://stockflow:ci_only_not_a_real_secret@localhost:5432/stockflow_test?schema=public
+      # Valores descartáveis, válidos só para o CI. Precisam ter 32+ caracteres
+      # e ser diferentes entre si, porque é isso que a aplicação exige no boot.
+      JWT_SECRET: ci_access_secret_com_mais_de_32_caracteres_000
+      JWT_REFRESH_SECRET: ci_refresh_secret_com_mais_de_32_caracteres_111
+      JWT_ACCESS_TTL: 15m
+      JWT_REFRESH_TTL: 7d
+      CORS_ORIGINS: http://localhost:5173
+      LOG_LEVEL: error
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      # `npm ci` e não `npm install`: instala exatamente o lock e falha se ele
+      # divergir do package.json. É o que impede o CI de resolver uma versão
+      # diferente da que roda na máquina do desenvolvedor — inclusive a
+      # armadilha do `prisma@latest` apontar para release candidate (§3.1).
+      - name: Instalar dependências
+        run: npm ci
+
+      # O cliente do Prisma não é versionado (é artefato de build, específico de
+      # plataforma). Precisa ser gerado antes de qualquer typecheck.
+      - name: Gerar Prisma Client
+        run: npm run prisma:generate
+
+      - name: Conferir versões críticas
+        run: |
+          node -e "
+            const lock = require('./package-lock.json');
+            const want = { prisma: '7.10.1', '@prisma/client': '7.10.1', typescript: '6.0.3' };
+            let failed = false;
+            for (const [pkg, version] of Object.entries(want)) {
+              const got = lock.packages['node_modules/' + pkg]?.version;
+              const ok = got === version;
+              console.log((ok ? 'ok  ' : 'FALHA ') + pkg + ': ' + got + ' (esperado ' + version + ')');
+              if (!ok) failed = true;
+            }
+            if (failed) process.exit(1);
+          "
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Testes unitários
+        run: npm run test
+
+      - name: Aplicar migrations no banco de teste
+        run: npm run prisma:deploy
+
+      # Prova que a migration aplica em banco vazio e que as invariantes de
+      # banco (CHECK e índice trigram) existem. A suíte de integração confere
+      # isso por consulta ao catálogo do Postgres.
+      - name: Testes de integração
+        run: npm run test:int
+
+      - name: Build
+        run: npm run build
+
+  # ─────────────────────────────────────────────────────────────────────────
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    needs: secrets-check
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Testes
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Formatação é verificada uma vez, na raiz, porque o Prettier é um só para o
+  # repositório inteiro.
+  # ─────────────────────────────────────────────────────────────────────────
+  format:
+    name: Formatação
+    runs-on: ubuntu-latest
+    needs: secrets-check
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Instalar ferramentas da raiz
+        run: npm ci
+
+      - name: Prettier
+        run: npm run format:check
