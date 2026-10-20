@@ -2,40 +2,97 @@
 @import 'tw-animate-css';
 
 /**
- * Design System do StockFlow — tokens.
+ * Design System do StockFlow.
  *
  * Tailwind v4 é configuração CSS-first: a fonte única de verdade do tema é este
- * bloco `@theme`, não um objeto JavaScript. Não existe `tailwind.config.js`
- * neste projeto, e isso é deliberado (docs/06-mvp-e-telas.md §6.4).
+ * arquivo, não um objeto JavaScript. Não existe `tailwind.config.js` neste
+ * projeto, e isso é deliberado (docs/06-mvp-e-telas.md §6.4).
+ *
+ * O arquivo tem três camadas, e a ordem importa:
+ *
+ *   1. `:root`  — as primitivas. Cada valor de cor aparece AQUI e em nenhum
+ *                 outro lugar. Mudar a identidade visual é mudar este bloco.
+ *   2. `@theme` — os nomes. Mapeia as primitivas para os utilitários do
+ *                 Tailwind, em dois vocabulários (ver abaixo).
+ *   3. `@layer base` — os padrões globais do documento.
  *
  * Cores em OKLCH e não em HSL ou HEX: em OKLCH a mesma variação de luminosidade
  * é percebida como a mesma variação pelo olho, então uma paleta derivada por
  * cálculo sai consistente. Em HSL, amarelo e azul com o mesmo `L` parecem ter
  * brilhos completamente diferentes.
- *
- * A paleta é neutra com UM acento. Sem gradiente decorativo.
- * Os componentes entram na Fase 3; aqui ficam apenas os tokens.
  */
-@theme {
-  /* ── Superfícies e texto ──────────────────────────────────────────────── */
-  --color-bg: oklch(100% 0 0);
-  --color-surface: oklch(98.5% 0.002 247);
-  --color-border: oklch(92.9% 0.004 247);
-  --color-text: oklch(21% 0.006 285);
-  --color-text-muted: oklch(55.2% 0.014 285);
 
-  /* ── Acento ───────────────────────────────────────────────────────────── */
-  --color-primary: oklch(54.6% 0.215 262);
-  --color-primary-fg: oklch(100% 0 0);
+/* ─────────────────────────────────────────────────────────────────────────
+   1. Primitivas
+   Paleta neutra com UM acento. Sem gradiente decorativo.
+   ───────────────────────────────────────────────────────────────────────── */
+:root {
+  --sf-bg: oklch(100% 0 0);
+  --sf-surface: oklch(98.5% 0.002 247);
+  --sf-border: oklch(92.9% 0.004 247);
+  --sf-text: oklch(21% 0.006 285);
+  --sf-text-muted: oklch(55.2% 0.014 285);
 
-  /* ── Semântica ────────────────────────────────────────────────────────── */
-  /* Usada de forma consistente em tabela, badge e dashboard:
+  --sf-primary: oklch(54.6% 0.215 262);
+  --sf-primary-fg: oklch(100% 0 0);
+
+  /* Semântica de estoque, usada de forma igual em tabela, badge e dashboard:
      success = entrada, warning = estoque baixo ou ajuste, danger = saída ou
      sem estoque. Cor nunca é o único portador da informação: todo badge
-     também tem rótulo em texto (§8.8 de acessibilidade). */
-  --color-success: oklch(59.6% 0.145 163);
-  --color-warning: oklch(68.1% 0.162 75);
-  --color-danger: oklch(57.7% 0.215 27);
+     também carrega rótulo em texto (§6.6). */
+  --sf-success: oklch(59.6% 0.145 163);
+  --sf-warning: oklch(68.1% 0.162 75);
+  --sf-danger: oklch(57.7% 0.215 27);
+
+  /* Raio usado por componente que precisa do valor em `style` inline. */
+  --radius: 0.5rem;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   2. Nomes
+
+   `inline` faz o Tailwind resolver o `var()` na geração do utilitário, em vez
+   de reemitir outra variável. É o que permite uma primitiva alimentar dois
+   nomes sem duplicar o valor.
+
+   Por que dois vocabulários: os componentes vindos do CLI do shadcn/ui falam
+   `background`, `foreground`, `muted`, `destructive` e assim por diante. Em vez
+   de reescrever dezesseis arquivos (e de reescrevê-los de novo a cada
+   componente novo), os nomes deles são mapeados para as MESMAS primitivas.
+   O design system continua sendo a fonte da verdade, e os componentes
+   continuam atualizáveis pelo CLI.
+   ───────────────────────────────────────────────────────────────────────── */
+@theme inline {
+  /* ── Vocabulário do StockFlow ─────────────────────────────────────────── */
+  --color-bg: var(--sf-bg);
+  --color-surface: var(--sf-surface);
+  --color-text: var(--sf-text);
+  --color-text-muted: var(--sf-text-muted);
+  --color-primary-fg: var(--sf-primary-fg);
+  --color-success: var(--sf-success);
+  --color-warning: var(--sf-warning);
+  --color-danger: var(--sf-danger);
+
+  /* ── Vocabulário do shadcn/ui, sobre as mesmas primitivas ─────────────── */
+  --color-background: var(--sf-bg);
+  --color-foreground: var(--sf-text);
+  --color-card: var(--sf-bg);
+  --color-card-foreground: var(--sf-text);
+  --color-popover: var(--sf-bg);
+  --color-popover-foreground: var(--sf-text);
+  --color-primary: var(--sf-primary);
+  --color-primary-foreground: var(--sf-primary-fg);
+  --color-secondary: var(--sf-surface);
+  --color-secondary-foreground: var(--sf-text);
+  --color-muted: var(--sf-surface);
+  --color-muted-foreground: var(--sf-text-muted);
+  --color-accent: var(--sf-surface);
+  --color-accent-foreground: var(--sf-text);
+  --color-destructive: var(--sf-danger);
+  --color-destructive-foreground: var(--sf-primary-fg);
+  --color-border: var(--sf-border);
+  --color-input: var(--sf-border);
+  --color-ring: var(--sf-primary);
 
   /* ── Tipografia ───────────────────────────────────────────────────────── */
   /* Monoespaçada para SKU, quantidade e ID: número em coluna de tabela precisa
@@ -58,22 +115,25 @@
   --radius-lg: 0.75rem;
 
   /* ── Sombra ───────────────────────────────────────────────────────────── */
-  /* Sombra marca elevação REAL: sm para o que flutua pouco, md para dropdown
-     e popover, lg para modal. Card estático não recebe sombra, recebe borda de
+  /* Sombra marca elevação REAL: sm para o que flutua pouco, md para dropdown e
+     popover, lg para modal. Card estático não recebe sombra, recebe borda de
      1px. É o que evita o visual de "painel genérico cheio de cards flutuando". */
   --shadow-sm: 0 1px 2px 0 oklch(21% 0.006 285 / 0.05);
   --shadow-md: 0 4px 12px -2px oklch(21% 0.006 285 / 0.1);
   --shadow-lg: 0 16px 40px -8px oklch(21% 0.006 285 / 0.18);
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+   3. Base
+   ───────────────────────────────────────────────────────────────────────── */
 @layer base {
   * {
     border-color: var(--color-border);
   }
 
   body {
-    background-color: var(--color-bg);
-    color: var(--color-text);
+    background-color: var(--color-background);
+    color: var(--color-foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
   }
@@ -81,12 +141,12 @@
   /* `:focus-visible` nunca é removido: é o que torna o app navegável por
      teclado (docs/06-mvp-e-telas.md §6.6). */
   :focus-visible {
-    outline: 2px solid var(--color-primary);
+    outline: 2px solid var(--color-ring);
     outline-offset: 2px;
   }
 
-  /* Dígito com largura fixa em toda tabela, para as colunas numéricas
-     alinharem sem fonte monoespaçada no texto inteiro. */
+  /* Dígito de largura fixa em toda tabela, para as colunas numéricas alinharem
+     sem precisar de fonte monoespaçada no texto inteiro. */
   table {
     font-variant-numeric: tabular-nums;
   }

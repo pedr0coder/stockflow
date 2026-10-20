@@ -12,5 +12,15 @@
      executa. É também o formato que o typescript-eslint segue pelas referências
      para achar o projeto de cada arquivo. */
   "files": [],
-  "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.node.json" }]
+  "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.node.json" }],
+
+  /* `files: []` faz este arquivo não compilar nada, então estes `paths` são
+     inertes para o `tsc`. Eles existem para as ferramentas que leem o
+     tsconfig.json da raiz do pacote para resolver o alias `@`, entre elas o CLI
+     do shadcn/ui: sem isso ele não resolve `@/components` e grava os arquivos
+     em uma pasta chamada literalmente `@`. A resolução que vale na compilação
+     está em tsconfig.app.json. */
+  "compilerOptions": {
+    "paths": { "@/*": ["./src/*"] }
+  }
 }
