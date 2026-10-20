@@ -195,6 +195,7 @@ com `m=19456,t=2,p=1`.
 | `.env` fora do que seria commitado                            | Sim, e nenhum segredo do `.env` aparece em arquivo versionável                                                      |
 | `.env.example` sem valor real                                 | Sim                                                                                                                 |
 | CI com os mesmos comandos do `package.json`                   | Sim                                                                                                                 |
+| **CI verde no runner do GitHub**                              | **Sim, na execução #2, nos quatro jobs** (§12.8)                                                                    |
 | README descreve o estado real                                 | Sim                                                                                                                 |
 
 Os 83 arquivos que entrariam no commit foram listados e revisados um a um. Não há
@@ -214,10 +215,10 @@ Ditas aqui e repetidas no README, para que não passem como resolvidas.
    devDependencies. A imagem multi-stage é da Fase 8.
 4. **O rate limiting não está configurado.** O `@nestjs/throttler` está instalado, mas ele
    protege endpoints de autenticação, que não existem ainda.
-5. **O CI ainda não teve execução verde.** A primeira execução reprovou no lint do
-   frontend, a causa raiz foi identificada e corrigida, mas a correção ainda não foi
-   confirmada por uma execução completa no runner. Detalhes em §12.8.
-6. **Nenhum teste E2E.** Playwright é da Fase 7, quando houver fluxo a percorrer.
+5. **Nenhum teste E2E.** Playwright é da Fase 7, quando houver fluxo a percorrer.
+
+A limitação sobre o CI saiu desta lista: a segunda execução passou nos quatro jobs. O
+histórico das duas execuções está em §12.8.
 
 ## 12.8 Primeira execução do CI
 
@@ -294,13 +295,33 @@ em `src/` que usa `process.env` ou `node:url` falha a compilação com `TS2591`.
 Nenhum arquivo de código-fonte foi alterado. O `vite.config.ts` permanece idêntico e o
 bundle saiu com os mesmos hashes, o que confirma que só a resolução de tipos mudou.
 
-### Estado
+### Confirmação: execução #2
 
 O job completo do frontend foi reproduzido em diretório limpo, com `npm ci` apenas em
-`frontend/`, e os quatro passos passaram. Backend e raiz continuam verdes localmente.
+`frontend/`, e os quatro passos passaram. Mas reprodução local não é confirmação, então a
+correção só foi dada como válida depois do runner.
 
-Isso **não** é confirmação de que o pipeline está corrigido. A correção só será dada como
-válida depois de uma execução completa e verde no runner do GitHub.
+A execução **#2**, no commit `766f937`, passou nos quatro jobs.
+
+| Execução | Commit    | Resultado                    |
+| -------- | --------- | ---------------------------- |
+| #1       | `683641d` | Reprovou no lint do frontend |
+| #2       | `766f937` | **Passou nos quatro jobs**   |
+
+O pipeline está verde e a limitação correspondente saiu da §12.7.
+
+### O que esta falha ensinou
+
+Vale registrar porque o padrão se repete em qualquer monorepo com pacotes independentes.
+
+Um pacote que usa uma API precisa **declarar** os tipos dela. Enquanto o `node_modules` da
+raiz existia na máquina de desenvolvimento, a dependência não declarada era resolvida por
+acidente de layout de diretório, e tudo passava. O job isolado do CI não tem esse acidente,
+e foi ele que expôs o defeito.
+
+Ou seja, o pipeline fez exatamente o que deveria: reprovou um estado que parecia correto
+localmente. Verde local e verde no runner só significam a mesma coisa quando o pacote é
+autossuficiente.
 
 ## 12.9 Próxima etapa
 

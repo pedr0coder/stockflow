@@ -266,10 +266,10 @@ Desta fase:
   devDependencies e não são imagem de produção. A imagem multi-stage é da Fase 8.
 - O rate limiting (`@nestjs/throttler`) está instalado mas ainda não configurado: ele
   protege endpoints de autenticação, que são da Fase 4.
-- O CI ainda não teve execução verde. A primeira execução reprovou no lint do frontend,
-  por uma dependência de tipos que o pacote usava sem declarar. A causa raiz foi
-  identificada e corrigida, e falta confirmar com uma execução completa no runner. O
-  registro está em [docs/12-relatorio-fase-2.md](docs/12-relatorio-fase-2.md), §12.8.
+  O CI está **verde nos quatro jobs**. A primeira execução reprovou no lint do frontend, por
+  uma dependência de tipos que o pacote usava sem declarar e que só resolvia por acidente de
+  layout de diretório na máquina de desenvolvimento. A causa raiz e a correção estão
+  registradas em [docs/12-relatorio-fase-2.md](docs/12-relatorio-fase-2.md), §12.8.
 
 Limitações de segurança e riscos aceitos permanentes estão em
 [docs/08-seguranca.md](docs/08-seguranca.md). O sistema não é nem será descrito como
