@@ -55,7 +55,7 @@ export default tseslint.config(
   {
     // Em teste, montar duplo com a forma exata que o componente consome é mais
     // claro que satisfazer a interface completa de `fetch`.
-    files: ['**/*.test.{ts,tsx}', 'src/test/**/*.ts'],
+    files: ['**/*.test.{ts,tsx}', 'src/test/**/*.{ts,tsx}'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-unsafe-assignment': 'off',
