@@ -2,15 +2,18 @@
 
 Plataforma de gerenciamento de estoque para pequenas e médias empresas.
 
-> **Estado atual: Fase 2 concluída (Fundação).**
+> **Estado atual: Fase 3 concluída (Design System e Shell).**
 >
 > O sistema **sobe de ponta a ponta** com um comando: PostgreSQL, API e frontend. O banco
-> está modelado e migrado, o contrato de erro e o health check funcionam, e há testes reais
-> executando contra um Postgres de verdade.
+> está modelado e migrado, o contrato de erro e o health check funcionam, e há 150 testes
+> reais, parte deles contra um Postgres de verdade.
 >
-> **Ainda não existe nenhuma funcionalidade de negócio.** Sem login, sem produtos, sem
-> movimentação de estoque. Isso é a Fase 4 em diante. A interface web tem **uma** tela, que
-> mostra o estado real da API, e nada nela é simulado.
+> A interface web tem shell completo: sidebar colapsável com navegação por papel, design
+> system aplicado e as 22 rotas do mapa de telas navegando.
+>
+> **Ainda não existe nenhuma funcionalidade de negócio.** Sem autenticação, sem produtos,
+> sem movimentação de estoque. Isso é da Fase 4 em diante, e a interface declara isso em
+> cada tela: nenhum número, nome, registro ou data aparece sem vir de uma fonte real.
 
 ## O problema
 
@@ -233,6 +236,8 @@ Os pontos onde este projeto tem engenharia de verdade, e não CRUD:
 | [10 — Riscos](docs/10-riscos.md)                        | Riscos técnicos e mitigações                        |
 | [11 — Plano da Fase 2](docs/11-plano-fase-2.md)         | Ordem de implementação e critério de aceite         |
 | [12 — Relatório da Fase 2](docs/12-relatorio-fase-2.md) | O que foi feito e o que foi executado               |
+| [13 — Plano da Fase 3](docs/13-plano-fase-3.md)         | Escopo e as decisões de honestidade da interface    |
+| [14 — Relatório da Fase 3](docs/14-relatorio-fase-3.md) | O que foi feito, medido e o que ficou em aberto     |
 | [ADRs](docs/adr/)                                       | Decisões arquiteturais registradas                  |
 
 ## Roadmap
@@ -240,9 +245,9 @@ Os pontos onde este projeto tem engenharia de verdade, e não CRUD:
 | Fase | Entrega                                        | Estado        |
 | ---- | ---------------------------------------------- | ------------- |
 | 1    | Planejamento, arquitetura, modelo de dados     | Concluída     |
-| 2    | Fundação: estrutura, banco, Docker, CI, testes | **Concluída** |
-| 3    | Design system e shell da aplicação             | Próxima       |
-| 4    | Autenticação, RBAC e cadastros                 |               |
+| 2    | Fundação: estrutura, banco, Docker, CI, testes | Concluída     |
+| 3    | Design system e shell da aplicação             | **Concluída** |
+| 4    | Autenticação, RBAC e cadastros                 | Próxima       |
 | 5    | Movimentação de estoque e inventário           |               |
 | 6    | Integração frontend e backend                  |               |
 | 7    | Qualidade, acessibilidade, performance         |               |
@@ -257,19 +262,31 @@ Detalhes em [docs/09-roadmap.md](docs/09-roadmap.md).
 
 ## Limitações conhecidas
 
-Desta fase:
-
 - **Nenhuma funcionalidade de negócio implementada.** Autenticação, cadastros e estoque
-  são das Fases 4 e 5.
+  são das Fases 4 e 5. A interface existe, e declara isso em cada tela.
+- **A pré-visualização de interface precisa ser removida na Fase 6.** Ela permite navegar
+  pelo shell sem backend, sem autenticar ninguém e sem exibir dado, e uma faixa fixa avisa
+  disso. Os quatro arquivos envolvidos estão marcados no código.
+- **O bundle cresceu 3,2 vezes** com React Router, TanStack Query, Radix e TanStack Table:
+  de 71 kB para 227 kB comprimidos. Divisão de código por rota é escopo da Fase 7, e o
+  número está registrado para comparação.
+- **Nenhum teste E2E.** Os dois fluxos críticos atravessam login real e movimentação, que
+  são das Fases 4 e 5. Playwright entra na Fase 7.
+- **Contraste não foi medido formalmente.** A base estrutural de acessibilidade existe
+  (`aria-sort`, `caption`, foco preso em modal, rótulo em texto em todo badge); a aferição
+  AA é da Fase 7.
+- O dashboard não tem gráfico, e `recharts` não foi instalado: uma biblioteca de gráficos
+  para desenhar um retângulo vazio seria dependência sem justificativa.
 - O seed cria cadastro sem movimentação, e todos os produtos ficam com saldo zero.
-- Os `Dockerfile.dev` são de desenvolvimento: rodam como root, carregam
-  devDependencies e não são imagem de produção. A imagem multi-stage é da Fase 8.
+- Os `Dockerfile.dev` são de desenvolvimento: rodam como root, carregam devDependencies e
+  não são imagem de produção. A imagem multi-stage é da Fase 8.
 - O rate limiting (`@nestjs/throttler`) está instalado mas ainda não configurado: ele
   protege endpoints de autenticação, que são da Fase 4.
-  O CI está **verde nos quatro jobs**. A primeira execução reprovou no lint do frontend, por
-  uma dependência de tipos que o pacote usava sem declarar e que só resolvia por acidente de
-  layout de diretório na máquina de desenvolvimento. A causa raiz e a correção estão
-  registradas em [docs/12-relatorio-fase-2.md](docs/12-relatorio-fase-2.md), §12.8.
+
+O CI está **verde nos quatro jobs**. A primeira execução reprovou no lint do frontend, por
+uma dependência de tipos que o pacote usava sem declarar e que só resolvia por acidente de
+layout de diretório na máquina de desenvolvimento. A causa raiz e a correção estão
+registradas em [docs/12-relatorio-fase-2.md](docs/12-relatorio-fase-2.md), §12.8.
 
 Limitações de segurança e riscos aceitos permanentes estão em
 [docs/08-seguranca.md](docs/08-seguranca.md). O sistema não é nem será descrito como

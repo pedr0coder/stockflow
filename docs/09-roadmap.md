@@ -43,9 +43,13 @@ banco limpo; CI verde.
 
 ---
 
-## Fase 3 — Design System e Shell
+## Fase 3 — Design System e Shell ✅
 
 **Objetivo:** o app parece um produto antes de ter funcionalidade.
+
+**Concluída em 2026-10-20.** Relatório em [14-relatorio-fase-3.md](14-relatorio-fase-3.md).
+Limitações abertas: tamanho do bundle (3,2× maior), ausência de E2E e a pré-visualização
+de interface, que precisa ser removida na Fase 6.
 
 - Tokens de tema em `@theme` (cores, tipografia, espaçamento, raio, sombra)
 - `AppShell`: sidebar colapsável, header, navegação por papel
