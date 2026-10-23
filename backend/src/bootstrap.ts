@@ -1,8 +1,10 @@
-import { HttpStatus, INestApplication, ValidationPipe } from '@nestjs/common';
+import { BadRequestException, HttpStatus, INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { DocumentBuilder, SwaggerModule, type OpenAPIObject } from '@nestjs/swagger';
+import type { ValidationError } from 'class-validator';
 import { Request, Response } from 'express';
+import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { v7 as uuidv7 } from 'uuid';
 import { ApiErrorResponse, ErrorCode } from './common/errors/error-codes';
@@ -29,6 +31,15 @@ export function configureApp(app: NestExpressApplication): INestApplication {
 
   // Não anunciar o stack (docs/08-seguranca.md §8.6).
   app.getHttpAdapter().getInstance().disable('x-powered-by');
+
+  /**
+   * Leitura de cookie.
+   *
+   * O Express escreve cookie de forma nativa, mas nao popula `req.cookies`
+   * sem este middleware. O refresh token vive em cookie httpOnly (ADR-0005),
+   * entao sem isto o endpoint de refresh nao teria como le-lo.
+   */
+  app.use(cookieParser());
 
   app.use(
     helmet({
@@ -96,10 +107,57 @@ export function configureApp(app: NestExpressApplication): INestApplication {
       forbidNonWhitelisted: true,
       transform: true,
       transformOptions: { enableImplicitConversion: false },
+      exceptionFactory: validationExceptionFactory,
     }),
   );
 
   return app;
+}
+
+/**
+ * Erro de validação com os campos NOMEADOS.
+ *
+ * ┌────────────────────────────────────────────────────────────────────────┐
+ * │ O padrão do Nest devolve um array de frases:                           │
+ * │                                                                        │
+ * │   "details": { "fields": ["O nome deve ter no mínimo 2 caracteres."] } │
+ * │                                                                        │
+ * │ A chave se chama `fields` e não traz campo nenhum. Um formulário não    │
+ * │ tem como saber em qual input pintar o erro, e sobraria casar a frase    │
+ * │ por texto — que quebra na primeira vez que alguém reescrever a          │
+ * │ mensagem. Com erro em dois campos, o cliente recebe duas frases e       │
+ * │ nenhuma indicação de ordem.                                            │
+ * │                                                                        │
+ * │ Aqui o formato passa a ser objeto indexado pelo nome do campo:          │
+ * │                                                                        │
+ * │   "details": { "fields": { "name": ["O nome deve ter..."] } }           │
+ * │                                                                        │
+ * │ A mensagem legível continua vindo em `message`, no texto padrão do      │
+ * │ status. Aninhamento (`endereco.cep`) sai com o caminho completo,        │
+ * │ porque é como o cliente identifica o input.                            │
+ * └────────────────────────────────────────────────────────────────────────┘
+ */
+export function validationExceptionFactory(errors: ValidationError[]): BadRequestException {
+  return new BadRequestException({ fields: flattenValidationErrors(errors) });
+}
+
+function flattenValidationErrors(errors: ValidationError[], prefix = ''): Record<string, string[]> {
+  const fields: Record<string, string[]> = {};
+
+  for (const error of errors) {
+    const path = prefix === '' ? error.property : `${prefix}.${error.property}`;
+    const messages = Object.values(error.constraints ?? {});
+
+    if (messages.length > 0) {
+      fields[path] = messages;
+    }
+
+    if (error.children !== undefined && error.children.length > 0) {
+      Object.assign(fields, flattenValidationErrors(error.children, path));
+    }
+  }
+
+  return fields;
 }
 
 /**
@@ -132,15 +190,16 @@ export function applyNotFoundHandler(app: NestExpressApplication): void {
 }
 
 /**
- * Monta o Swagger a partir dos DTOs, então a documentação não desatualiza em
- * relação ao código.
+ * Documento OpenAPI gerado a partir dos DTOs e dos decorators das rotas.
  *
- * Separado de `configureApp` porque o teste de integração não precisa gerar
- * OpenAPI em cada execução: é trabalho sem retorno para a suíte. O conteúdo do
- * documento é verificado por um caso próprio, que chama esta função.
+ * Separado de `setupSwagger` para que o teste de contrato possa conferir o
+ * documento sem montar a página do Swagger UI. É este documento que
+ * `contract.int-spec.ts` compara com a superfície de rotas aprovada: se
+ * alguém adicionar, remover ou renomear uma rota, o teste aponta a diferença
+ * antes de o cliente descobrir.
  */
-export function setupSwagger(app: NestExpressApplication): void {
-  const document = SwaggerModule.createDocument(
+export function buildOpenApiDocument(app: NestExpressApplication): OpenAPIObject {
+  return SwaggerModule.createDocument(
     app,
     new DocumentBuilder()
       .setTitle('StockFlow API')
@@ -153,8 +212,17 @@ export function setupSwagger(app: NestExpressApplication): void {
       .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'access-token')
       .build(),
   );
+}
 
-  SwaggerModule.setup(DOCS_PATH, app, document, {
+/**
+ * Monta a página do Swagger a partir do documento acima, então a documentação
+ * não desatualiza em relação ao código.
+ *
+ * Separado de `configureApp` porque a suíte de integração não precisa gerar
+ * OpenAPI em cada arquivo: é trabalho sem retorno.
+ */
+export function setupSwagger(app: NestExpressApplication): void {
+  SwaggerModule.setup(DOCS_PATH, app, buildOpenApiDocument(app), {
     swaggerOptions: { persistAuthorization: true, tagsSorter: 'alpha', operationsSorter: 'alpha' },
     customSiteTitle: 'StockFlow API',
   });

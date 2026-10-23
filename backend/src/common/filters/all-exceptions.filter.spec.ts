@@ -1,4 +1,10 @@
-import { ArgumentsHost, BadRequestException, HttpStatus, NotFoundException } from '@nestjs/common';
+import {
+  ArgumentsHost,
+  BadRequestException,
+  HttpException,
+  HttpStatus,
+  NotFoundException,
+} from '@nestjs/common';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DomainError } from '../errors/domain.error';
 import { ApiErrorResponse, ErrorCode } from '../errors/error-codes';
@@ -158,6 +164,122 @@ describe('AllExceptionsFilter', () => {
       filter.catch(new BadRequestException('SKU já cadastrado.'), host);
 
       expect(captured.body.message).toBe('SKU já cadastrado.');
+    });
+  });
+
+  /**
+   * Erro que não é `HttpException`, mas carrega status, pela convenção
+   * `http-errors` que o `body-parser` segue.
+   *
+   * Antes destes casos, corpo acima do limite e JSON malformado caíam no 500
+   * genérico: o cliente que esqueceu uma vírgula recebia "Erro interno. Tente
+   * novamente", e cada erro de cliente entrava no alerta de 5xx.
+   */
+  describe('erro de middleware com status próprio', () => {
+    it('aproveita o status 4xx de um Error comum', () => {
+      const { host, captured } = makeHost();
+      const tooLarge = Object.assign(new Error('request entity too large'), {
+        status: HttpStatus.PAYLOAD_TOO_LARGE,
+      });
+
+      filter.catch(tooLarge, host);
+
+      expect(captured.status).toBe(HttpStatus.PAYLOAD_TOO_LARGE);
+      expect(captured.body.code).toBe(ErrorCode.PAYLOAD_TOO_LARGE);
+      expect(captured.body.message).toBe('Corpo da requisição acima do limite aceito.');
+    });
+
+    it('aceita statusCode além de status', () => {
+      const { host, captured } = makeHost();
+
+      filter.catch(Object.assign(new Error('x'), { statusCode: 400 }), host);
+
+      expect(captured.status).toBe(HttpStatus.BAD_REQUEST);
+    });
+
+    it('IGNORA status 5xx de origem desconhecida', () => {
+      const { host, captured } = makeHost();
+
+      filter.catch(Object.assign(new Error('falha interna detalhada'), { status: 503 }), host);
+
+      // Se o erro é nosso, a mensagem não deve vazar o que aconteceu: cai no
+      // 500 genérico, e o detalhe fica no log.
+      expect(captured.status).toBe(HttpStatus.INTERNAL_SERVER_ERROR);
+      expect(captured.body.message).not.toContain('detalhada');
+    });
+
+    it('nunca usa a mensagem da biblioteca na resposta', () => {
+      const { host, captured } = makeHost();
+      const tooLarge = Object.assign(new Error('request entity too large'), { status: 413 });
+
+      filter.catch(tooLarge, host);
+
+      expect(captured.body.message).not.toContain('entity');
+    });
+  });
+
+  /**
+   * Mensagens escritas pelo framework não vão para o cliente.
+   *
+   * Os dois primeiros casos abaixo vazavam de verdade: o throttler respondia
+   * com o nome da própria classe, e o corpo malformado citava a posição no
+   * buffer.
+   */
+  describe('mensagem de framework', () => {
+    it('substitui a do throttler, que traz o nome da classe', () => {
+      const { host, captured } = makeHost();
+
+      filter.catch(
+        new HttpException('ThrottlerException: Too Many Requests', HttpStatus.TOO_MANY_REQUESTS),
+        host,
+      );
+
+      expect(captured.body.message).toBe('Muitas tentativas. Aguarde alguns minutos.');
+      expect(captured.body.code).toBe(ErrorCode.RATE_LIMIT_EXCEEDED);
+    });
+
+    it('substitui a do parser de JSON, que cita posição no buffer', () => {
+      const { host, captured } = makeHost();
+
+      filter.catch(
+        new BadRequestException("Expected property name or '}' in JSON at position 1"),
+        host,
+      );
+
+      expect(captured.body.message).toBe('Dados inválidos. Verifique os campos informados.');
+    });
+
+    it('substitui "Unexpected end of JSON input"', () => {
+      const { host, captured } = makeHost();
+
+      filter.catch(new BadRequestException('Unexpected end of JSON input'), host);
+
+      expect(captured.body.message).not.toContain('JSON');
+    });
+
+    it('mas preserva mensagem em português escrita pelo projeto', () => {
+      const { host, captured } = makeHost();
+
+      filter.catch(new NotFoundException('Fornecedor não encontrado.'), host);
+
+      expect(captured.body.message).toBe('Fornecedor não encontrado.');
+    });
+  });
+
+  describe('erro de validação com campos nomeados', () => {
+    it('repassa o objeto indexado pelo nome do campo', () => {
+      const { host, captured } = makeHost();
+
+      filter.catch(
+        new BadRequestException({ fields: { name: ['O nome deve ter no mínimo 2 caracteres.'] } }),
+        host,
+      );
+
+      expect(captured.body.details).toEqual({
+        fields: { name: ['O nome deve ter no mínimo 2 caracteres.'] },
+      });
+      // A frase legível continua vindo do status, não do array de campos.
+      expect(captured.body.message).toBe('Dados inválidos. Verifique os campos informados.');
     });
   });
 

@@ -46,7 +46,26 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       connectionTimeoutMillis: CONNECTION_TIMEOUT_MS,
     });
 
-    super({ adapter });
+    super({
+      adapter,
+
+      /**
+       * `passwordHash` nunca sai do banco por padrão.
+       *
+       * A docs/05-api.md §5.3 diz que o hash nunca é serializado, garantido
+       * por `@Exclude()` na entidade. Só que `@Exclude()` age sobre instância
+       * de classe, e o Prisma devolve objeto simples: bastaria um service
+       * devolver o resultado cru da consulta para o hash ir na resposta.
+       *
+       * Omitindo na origem, o campo deixa de vir em qualquer consulta, em
+       * qualquer service, escrita por qualquer pessoa. Quem precisa dele (o
+       * login, e só ele) pede com `omit: { passwordHash: false }`.
+       *
+       * O vazamento deixa de ser o comportamento padrão e passa a exigir uma
+       * linha deliberada, que aparece em revisão de código.
+       */
+      omit: { user: { passwordHash: true } },
+    });
     this.logger.setContext(PrismaService.name);
   }
 

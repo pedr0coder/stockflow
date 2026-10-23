@@ -17,6 +17,8 @@ export const ErrorCode = {
   NOT_FOUND: 'NOT_FOUND',
   CONFLICT: 'CONFLICT',
   UNPROCESSABLE_ENTITY: 'UNPROCESSABLE_ENTITY',
+  /** Corpo da requisição acima do limite aceito pelo servidor. */
+  PAYLOAD_TOO_LARGE: 'PAYLOAD_TOO_LARGE',
   RATE_LIMIT_EXCEEDED: 'RATE_LIMIT_EXCEEDED',
   /** Último recurso. A resposta nunca carrega detalhe interno (§8.9). */
   INTERNAL_ERROR: 'INTERNAL_ERROR',
