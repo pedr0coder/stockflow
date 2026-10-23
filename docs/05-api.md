@@ -44,6 +44,7 @@ seria superfície de ataque e de erro.
 | 404    | Recurso inexistente                                                 |
 | 409    | Conflito de estado de negócio (SKU duplicado, estoque insuficiente) |
 | 422    | Entrada válida em forma, mas inválida em regra de negócio           |
+| 413    | Corpo da requisição acima do limite aceito                          |
 | 429    | Rate limit excedido                                                 |
 | 500    | Erro inesperado (sem vazar detalhe interno)                         |
 
@@ -54,7 +55,37 @@ INSUFFICIENT_STOCK        PRODUCT_INACTIVE        SKU_ALREADY_EXISTS
 EMAIL_ALREADY_EXISTS      INVALID_CREDENTIALS     USER_INACTIVE
 CATEGORY_HAS_PRODUCTS     INVENTORY_NOT_OPEN      INVENTORY_ALREADY_APPROVED
 INVALID_TYPE_REASON       REFRESH_TOKEN_REUSED    FORBIDDEN_ROLE
+PAYLOAD_TOO_LARGE
 ```
+
+**Forma do erro de validação** (400, `code: VALIDATION_ERROR`)
+
+`details.fields` é um objeto indexado pelo **nome do campo**, com a lista de mensagens
+daquele campo:
+
+```json
+{
+  "statusCode": 400,
+  "code": "VALIDATION_ERROR",
+  "message": "Dados inválidos. Verifique os campos informados.",
+  "details": {
+    "fields": {
+      "name": ["O nome deve ter no mínimo 2 caracteres."],
+      "minStock": ["minStock deve ser um decimal com até 3 casas, como \"10.000\"."]
+    }
+  },
+  "requestId": "01JB..."
+}
+```
+
+Indexado pelo nome, e não uma lista de frases: um formulário precisa saber em qual campo
+pintar o erro, e casar a mensagem por texto quebraria na primeira vez que a frase fosse
+reescrita. Todos os campos inválidos vêm de uma vez, para que a tela não revele os
+problemas um a um.
+
+`message` é sempre texto para o usuário final, em português. Mensagem gerada por
+framework ou biblioteca — `Cannot GET /x`, `ThrottlerException: ...`, erro do parser de
+JSON — é substituída pelo texto padrão do status.
 
 ## 5.2 Autenticação — `/auth`
 
@@ -188,6 +219,15 @@ Sem saldo:
 Decimais trafegam como **string** no JSON, não como number. `number` em JavaScript é
 IEEE-754 e perderia precisão em quantidades e custos — o mesmo motivo de não usar float no
 banco.
+
+A escala é **fixa e vem da coluna**, não do valor: quantidade sempre com três casas
+(`"0.000"`, `"19.500"`) e custo sempre com quatro (`"12.5000"`). Um saldo zero sai
+`"0.000"`, nunca `"0"` — um cliente que corte a casa decimal por posição, ou compare
+strings, leria errado. A mesma escala vale no snapshot do log de auditoria, para que log e
+resposta não discordem sobre o valor.
+
+**Busca textual** — `search` é tratado como texto literal: `%` e `_` são escapados antes de
+chegar ao `LIKE`, então buscar `50%` encontra "Desconto 50%" em vez de devolver tudo.
 
 ## 5.8 Inventário — `/inventories`
 

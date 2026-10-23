@@ -66,7 +66,15 @@ tela de demonstração; layout correto em 375px, 768px e 1440px; nenhum dado fal
 
 ---
 
-## Fase 4 — Backend: auth e cadastros
+## Fase 4 — Backend: auth e cadastros ⏳
+
+Implementada e verificada; aguardando commit. Relatório em
+[docs/16-relatorio-fase-4.md](16-relatorio-fase-4.md), com os números medidos, os cinco
+defeitos que os testes encontraram e a pendência aberta da §16.7 (instabilidade do worker
+do Vitest, 1 execução em 8).
+
+Entregue: 31 rotas (as 32 documentadas do §5 menos `GET /products/:id/movements`, adiada
+para a Fase 5), 128 testes unitários e 254 de integração contra PostgreSQL real.
 
 - Módulo `auth`: login, refresh rotativo, logout, `/me`; Argon2id; `RefreshToken`
 - `JwtAuthGuard` + `RolesGuard` globais; `@Public()`, `@Roles()`, `@CurrentUser()`
@@ -78,6 +86,9 @@ tela de demonstração; layout correto em 375px, 768px e 1440px; nenhum dado fal
 
 **Critério de aceite:** suíte de auth, RBAC e CRUD passando com execução real; Swagger
 completo; `passwordHash` ausente de toda resposta (com teste provando).
+
+Atendido, com uma exceção registrada: a suíte de integração não é determinística no
+Windows (§16.7). A falha é do processo do runner, não de asserção.
 
 ---
 

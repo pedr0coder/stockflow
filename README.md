@@ -2,18 +2,28 @@
 
 Plataforma de gerenciamento de estoque para pequenas e médias empresas.
 
-> **Estado atual: Fase 3 concluída (Design System e Shell).**
+> **Estado atual: Fase 4 implementada e verificada (backend de autenticação e cadastros).**
 >
 > O sistema **sobe de ponta a ponta** com um comando: PostgreSQL, API e frontend. O banco
-> está modelado e migrado, o contrato de erro e o health check funcionam, e há 150 testes
-> reais, parte deles contra um Postgres de verdade.
+> está modelado e migrado, e a API tem 31 rotas respondendo: login com refresh rotativo,
+> RBAC com padrão de negar, CRUD de usuários, categorias, fornecedores e produtos, e log de
+> auditoria somente leitura.
+>
+> São 487 testes reais: 128 unitários e 254 de integração no backend, estes contra um
+> PostgreSQL de verdade, e 105 unitários no frontend. A suíte de integração exercita a mesma
+> aplicação que roda em produção, não uma montagem de teste.
 >
 > A interface web tem shell completo: sidebar colapsável com navegação por papel, design
 > system aplicado e as 22 rotas do mapa de telas navegando.
 >
-> **Ainda não existe nenhuma funcionalidade de negócio.** Sem autenticação, sem produtos,
-> sem movimentação de estoque. Isso é da Fase 4 em diante, e a interface declara isso em
-> cada tela: nenhum número, nome, registro ou data aparece sem vir de uma fonte real.
+> **O frontend ainda não consome a API**, e nenhuma tela mostra dado de negócio. A ligação
+> entre os dois é a Fase 6; movimentação de estoque é a Fase 5. Até lá a interface declara
+> isso em cada tela: nenhum número, nome, registro ou data aparece sem vir de uma fonte
+> real.
+>
+> Há uma pendência aberta registrada: a suíte de integração aborta o processo do runner em
+> cerca de 1 execução em 8 no Windows, com diagnóstico e medição em
+> [docs/16-relatorio-fase-4.md](docs/16-relatorio-fase-4.md), §16.7.
 
 ## O problema
 
@@ -172,8 +182,9 @@ A suíte de integração aplica as migrations sozinha e se recusa a rodar se
 a suíte trunca tabelas, e um erro de configuração apagaria o banco de desenvolvimento.
 
 Resultado da última execução verificada está em
-[docs/12-relatorio-fase-2.md](docs/12-relatorio-fase-2.md). Nenhum resultado de teste é
-relatado neste projeto sem execução real.
+[docs/16-relatorio-fase-4.md](docs/16-relatorio-fase-4.md), §16.1. Nenhum resultado de teste
+é relatado neste projeto sem execução real — e quando a execução não é limpa, como no caso
+da §16.7, isso é relatado também.
 
 ## Arquitetura
 
@@ -216,9 +227,21 @@ Os pontos onde este projeto tem engenharia de verdade, e não CRUD:
   Erro 5xx nunca vaza stack trace, e há teste provando.
 - **Health check que diz a verdade** — `/health/ready` consulta o banco e responde 503
   quando ele está fora. Um endpoint que sempre responde 200 não informa nada.
-- **RBAC verificado no servidor** (Fase 4) — esconder botão não é autorização.
-- **Sessão em dois tokens** (Fase 4) — access em memória, refresh rotativo em cookie
-  httpOnly com detecção de reuso. → [ADR-0005](docs/adr/0005-armazenamento-de-token.md)
+- **RBAC verificado no servidor, com padrão de negar** — o `JwtAuthGuard` e o `RolesGuard`
+  são globais, então rota nova nasce fechada: esquecer o decorator bloqueia o acesso em vez
+  de liberá-lo. Esconder botão não é autorização, e a matriz de papéis é verificada por
+  requisição real, não por teste do guard isolado.
+- **Sessão em dois tokens** — access em memória por 15 minutos, refresh rotativo de 7 dias
+  em cookie httpOnly com `SameSite=Strict` e detecção de reuso: apresentar um refresh já
+  rotacionado derruba todas as sessões daquele usuário.
+  → [ADR-0005](docs/adr/0005-armazenamento-de-token.md)
+- **`passwordHash` omitido na origem** — o campo não vem de nenhuma consulta por padrão,
+  configurado no próprio cliente Prisma. Quem precisa dele (só o login) pede
+  explicitamente. O vazamento deixa de ser o comportamento padrão e passa a exigir uma
+  linha que aparece em revisão.
+- **Rate limit por par (origem, conta) no login** — só por IP permitiria testar uma senha
+  em mil contas do mesmo endereço; só por e-mail permitiria bloquear a conta de outra
+  pessoa de propósito.
 
 ## Documentação
 
@@ -238,21 +261,23 @@ Os pontos onde este projeto tem engenharia de verdade, e não CRUD:
 | [12 — Relatório da Fase 2](docs/12-relatorio-fase-2.md) | O que foi feito e o que foi executado               |
 | [13 — Plano da Fase 3](docs/13-plano-fase-3.md)         | Escopo e as decisões de honestidade da interface    |
 | [14 — Relatório da Fase 3](docs/14-relatorio-fase-3.md) | O que foi feito, medido e o que ficou em aberto     |
+| [15 — Plano da Fase 4](docs/15-plano-fase-4.md)         | Escopo do backend, modelo de token e RBAC           |
+| [16 — Relatório da Fase 4](docs/16-relatorio-fase-4.md) | Endpoints, defeitos encontrados e pendências        |
 | [ADRs](docs/adr/)                                       | Decisões arquiteturais registradas                  |
 
 ## Roadmap
 
-| Fase | Entrega                                        | Estado        |
-| ---- | ---------------------------------------------- | ------------- |
-| 1    | Planejamento, arquitetura, modelo de dados     | Concluída     |
-| 2    | Fundação: estrutura, banco, Docker, CI, testes | Concluída     |
-| 3    | Design system e shell da aplicação             | **Concluída** |
-| 4    | Autenticação, RBAC e cadastros                 | Próxima       |
-| 5    | Movimentação de estoque e inventário           |               |
-| 6    | Integração frontend e backend                  |               |
-| 7    | Qualidade, acessibilidade, performance         |               |
-| 8    | Deploy e CI/CD                                 |               |
-| 9    | Portfólio: README final, screenshots, demo     |               |
+| Fase | Entrega                                        | Estado                            |
+| ---- | ---------------------------------------------- | --------------------------------- |
+| 1    | Planejamento, arquitetura, modelo de dados     | Concluída                         |
+| 2    | Fundação: estrutura, banco, Docker, CI, testes | Concluída                         |
+| 3    | Design system e shell da aplicação             | Concluída                         |
+| 4    | Autenticação, RBAC e cadastros                 | **Verificada, aguardando commit** |
+| 5    | Movimentação de estoque e inventário           |                                   |
+| 6    | Integração frontend e backend                  |                                   |
+| 7    | Qualidade, acessibilidade, performance         |                                   |
+| 8    | Deploy e CI/CD                                 |                                   |
+| 9    | Portfólio: README final, screenshots, demo     |                                   |
 
 Fora do MVP, em ordem de prioridade: exportação CSV · recuperação de senha por e-mail ·
 QR Code e código de barras com leitura por câmera · alerta automático de estoque baixo ·
@@ -280,8 +305,16 @@ Detalhes em [docs/09-roadmap.md](docs/09-roadmap.md).
 - O seed cria cadastro sem movimentação, e todos os produtos ficam com saldo zero.
 - Os `Dockerfile.dev` são de desenvolvimento: rodam como root, carregam devDependencies e
   não são imagem de produção. A imagem multi-stage é da Fase 8.
-- O rate limiting (`@nestjs/throttler`) está instalado mas ainda não configurado: ele
-  protege endpoints de autenticação, que são da Fase 4.
+- A suíte de integração aborta o processo do runner em cerca de 1 execução em 8 no Windows,
+  sem erro de asserção. Diagnóstico, medição e hipóteses descartadas em
+  [docs/16-relatorio-fase-4.md](docs/16-relatorio-fase-4.md), §16.7.
+- Alterar papel ou inativar usuário revoga os refresh tokens, mas o access já emitido vale
+  até expirar — uma janela de até 15 minutos. É consequência conhecida de JWT sem lista de
+  revogação, e há teste que documenta a janela.
+- O rate limit é em memória, por instância: duas instâncias atrás de um balanceador dobram
+  o limite efetivo. Redis entra quando houver mais de uma.
+- O log de auditoria vive no mesmo banco que ele audita. Quem tem acesso direto ao Postgres
+  pode alterá-lo; mitigação real exigiria um sink externo append-only.
 
 O CI está **verde nos quatro jobs**. A primeira execução reprovou no lint do frontend, por
 uma dependência de tipos que o pacote usava sem declarar e que só resolvia por acidente de
