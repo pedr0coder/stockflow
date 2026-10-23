@@ -39,15 +39,20 @@ export async function createTestApp(): Promise<TestApp> {
    * │                                                                          │
    * │ O supertest, ao receber um servidor que não está escutando, chama        │
    * │ `listen(0)` sozinho e fecha o socket ao fim da requisição. Com uma app    │
-   * │ apenas inicializada (`init()` sem `listen()`), isso significa uma porta   │
-   * │ efêmera nova a cada chamada: a suíte passou a abrir e fechar mais de      │
-   * │ quatrocentas, e o worker do Vitest começou a abortar de forma             │
-   * │ intermitente no Windows, com exit code 3221226505 e NENHUM erro de        │
-   * │ JavaScript — cerca de uma execução em três perdia um arquivo inteiro.     │
+   * │ apenas inicializada (`init()` sem `listen()`), isso significa um listener │
+   * │ novo a cada chamada: mais de quatrocentos por execução da suíte.          │
    * │                                                                          │
    * │ Escutando uma vez aqui, o supertest encontra `server.address()` já        │
    * │ preenchido e reutiliza o listener existente. Passa a existir um socket    │
    * │ de escuta por arquivo de teste, em vez de um por requisição.             │
+   * │                                                                          │
+   * │ Esta mudança nasceu como tentativa de explicar o abort intermitente do    │
+   * │ processo, e NÃO o explica: a medição mostrou pico de 39 conexões em       │
+   * │ TIME_WAIT contra 64.511 portas efêmeras disponíveis, então nunca houve    │
+   * │ exaustão. A causa está na camada de sockets do runtime e reproduz fora    │
+   * │ daqui (docs/16-relatorio-fase-4.md §16.7). Ficou porque um listener por   │
+   * │ arquivo em lugar de centenas é melhor de todo jeito, e deixou a suíte     │
+   * │ mais rápida.                                                              │
    * │                                                                          │
    * │ Porta 0: o sistema escolhe uma livre. Fixar a porta faria a suíte         │
    * │ colidir com a API rodando no host durante o desenvolvimento.             │
@@ -92,20 +97,20 @@ export interface TestUser {
  * Hash de `TEST_PASSWORD`, calculado UMA vez por processo de teste.
  *
  * ┌──────────────────────────────────────────────────────────────────────────┐
- * │ Isto não é só otimização: o hash por usuário derrubava a suíte.           │
- * │                                                                          │
  * │ Argon2id com os parâmetros da OWASP aloca 19 MiB por chamada, e isso é    │
- * │ deliberado — é o custo que torna o ataque de dicionário inviável          │
- * │ (ADR-0004). A suíte cria centenas de usuários no MESMO processo, e o      │
- * │ módulo nativo abortava o worker de forma intermitente, com exit code      │
- * │ 3221226505 e nenhuma falha de asserção: cerca de uma execução em três     │
- * │ perdia um arquivo inteiro.                                               │
+ * │ deliberado: é o custo que torna o ataque de dicionário inviável           │
+ * │ (ADR-0004). A suíte cria centenas de usuários no mesmo processo, e todos   │
+ * │ usam a mesma senha — então o hash é o mesmo, e calculá-lo uma vez poupa   │
+ * │ alguns gigabytes de alocação por execução.                                │
  * │                                                                          │
- * │ Todo usuário de teste usa a mesma senha, então o hash é o mesmo. Calcular │
- * │ uma vez e reutilizar elimina a causa sem enfraquecer nada: o hash         │
- * │ gravado é um Argon2id real, com os parâmetros reais, e o login continua   │
- * │ verificando-o de verdade a cada caso — a verificação é o que está sob     │
- * │ teste, e essa não é compartilhada.                                       │
+ * │ Não enfraquece nada: o hash gravado é um Argon2id real, com os parâmetros │
+ * │ reais, e o login continua verificando-o de verdade a cada caso — a        │
+ * │ verificação é o que está sob teste, e essa não é compartilhada.           │
+ * │                                                                          │
+ * │ Entrou como tentativa de explicar o abort intermitente do processo e NÃO   │
+ * │ o explicou: o cenário controlado SEM nenhuma chamada a Argon2 abortou nas │
+ * │ três execuções (docs/16-relatorio-fase-4.md §16.7). Ficou porque é melhor │
+ * │ de todo jeito.                                                            │
  * └──────────────────────────────────────────────────────────────────────────┘
  */
 let hashMemorizado: Promise<string> | undefined;

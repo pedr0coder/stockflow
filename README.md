@@ -21,9 +21,10 @@ Plataforma de gerenciamento de estoque para pequenas e médias empresas.
 > isso em cada tela: nenhum número, nome, registro ou data aparece sem vir de uma fonte
 > real.
 >
-> Há uma pendência aberta registrada: a suíte de integração aborta o processo do runner em
-> cerca de 1 execução em 8 no Windows, com diagnóstico e medição em
-> [docs/16-relatorio-fase-4.md](docs/16-relatorio-fase-4.md), §16.7.
+> Há uma pendência aberta registrada: em 2 de 20 execuções da suíte de integração o processo
+> aborta e um arquivo deixa de rodar. A causa **não está no projeto** — o abort reproduz em
+> um script Node comum, sem Vitest e sem nada deste repositório. Investigação, evidências e
+> hipóteses descartadas em [docs/16-relatorio-fase-4.md](docs/16-relatorio-fase-4.md), §16.7.
 
 ## O problema
 
@@ -305,8 +306,10 @@ Detalhes em [docs/09-roadmap.md](docs/09-roadmap.md).
 - O seed cria cadastro sem movimentação, e todos os produtos ficam com saldo zero.
 - Os `Dockerfile.dev` são de desenvolvimento: rodam como root, carregam devDependencies e
   não são imagem de produção. A imagem multi-stage é da Fase 8.
-- A suíte de integração aborta o processo do runner em cerca de 1 execução em 8 no Windows,
-  sem erro de asserção. Diagnóstico, medição e hipóteses descartadas em
+- A suíte de integração aborta o processo em 2 de 20 execuções no Windows, sem erro de
+  asserção. O abort reproduz fora do Vitest e fora do código do projeto, em Node puro;
+  Argon2, swc, Rolldown, supertest, Express, Nest, Prisma e antivírus estão descartados com
+  evidência. Diagnóstico completo em
   [docs/16-relatorio-fase-4.md](docs/16-relatorio-fase-4.md), §16.7.
 - Alterar papel ou inativar usuário revoga os refresh tokens, mas o access já emitido vale
   até expirar — uma janela de até 15 minutos. É consequência conhecida de JWT sem lista de

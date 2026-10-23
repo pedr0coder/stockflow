@@ -28,8 +28,10 @@ Os testes de integração rodam contra **PostgreSQL real**, no banco `stockflow_
 mesma aplicação que roda em produção: `configureApp` é compartilhada, então a suíte
 exercita o mesmo pipeline de guards, pipes e cabeçalhos que o cliente recebe.
 
-Há uma instabilidade conhecida no runner, descrita na §16.7. Ela não é falha de teste: é o
-processo do Vitest abortando. Está registrada como pendência aberta, com a medição.
+Há uma instabilidade conhecida, descrita na §16.7. Ela não é falha de teste e não está no
+projeto: o processo aborta na camada de sockets do runtime, e a investigação reproduz o
+abort em um script Node comum, sem Vitest e sem nada deste repositório. Está registrada
+como pendência aberta, com as evidências.
 
 ---
 
@@ -270,8 +272,12 @@ quando a Fase 4 chegasse.
 **`PAYLOAD_TOO_LARGE` como código de erro próprio**, em vez de cair no genérico de 400: o
 cliente precisa distinguir "seus dados estão errados" de "seu corpo é grande demais".
 
-**Hash da senha de teste calculado uma vez por processo.** Não é só otimização; está
-explicado na §16.7.
+**Hash da senha de teste calculado uma vez por processo.** Todo usuário de teste usa a
+mesma senha, então o hash é o mesmo, e Argon2id aloca 19 MiB por chamada de propósito
+(ADR-0004). Calcular uma vez não enfraquece nada: o hash gravado é um Argon2id real, com os
+parâmetros reais, e o login continua verificando-o de verdade a cada caso — a verificação é
+o que está sob teste, e essa não é compartilhada. Entrou como tentativa de explicar o abort
+da §16.7 e não o explicou; ficou porque é melhor do mesmo jeito.
 
 ---
 
@@ -306,53 +312,145 @@ permite ver que uma conta específica está sob ataque.
 
 ---
 
-## 16.7 Pendência aberta: o worker do Vitest aborta de forma intermitente
+## 16.7 Pendência aberta: o processo aborta de forma intermitente
 
-**Isto não é falha de teste. É o processo morrendo.**
+**Isto não é falha de teste. É o processo morrendo, e o problema não está no projeto.**
 
-Rodando os oito arquivos de integração juntos, o worker do Vitest às vezes termina com exit
-code 3221226505 (`0xC0000409`) e um arquivo inteiro deixa de rodar. Não há erro de
-JavaScript, não há asserção falhando, e o Windows não registra evento no WER — o que
-indica `abort()` nativo, e não exceção de hardware.
+A suíte de integração às vezes termina com exit code `0xC0000409`
+(`STATUS_STACK_BUFFER_OVERRUN`, que no Windows é também o código do `abort()` da CRT), com
+**stderr completamente vazio**, nenhum erro de JavaScript, nenhuma asserção falhando e
+nenhum evento no WER. A ausência de evento no WER é informação: `__fastfail` não passa pelo
+relatório de erro do Windows, então a assinatura é de `abort()` nativo deliberado, não de
+exceção de hardware.
 
 ### Medição
 
-| Situação                          | Execuções com erro |
-| --------------------------------- | ------------------ |
-| Antes de qualquer ajuste          | ~1 em 3            |
-| Depois do listener único (abaixo) | 1 em 8             |
+Vinte execuções consecutivas da suíte completa, com o código desta fase:
 
-### Hipóteses testadas e descartadas
+| Execuções | Resultado                                     |
+| --------- | --------------------------------------------- |
+| 18 de 20  | `254 passed (254)`, sem erro                  |
+| 2 de 20   | processo abortado, um arquivo deixou de rodar |
 
-| Hipótese                                    | Como foi descartada                                                 |
-| ------------------------------------------- | ------------------------------------------------------------------- |
-| Vazamento de conexão do Postgres            | conexões medidas durante a suíte: pico de 2, zero entre arquivos    |
-| Volume de hashes Argon2 no mesmo processo   | hash memorizado; duração e taxa de falha praticamente iguais        |
-| Worker thread do transporte do pino         | só configurado em desenvolvimento; a suíte roda com `NODE_ENV=test` |
-| Reavaliação do grafo de módulos (`isolate`) | com `isolate: false` a falha ficou mais frequente, não menos        |
-| Específico do pool `forks`                  | com `--pool=threads` acontece também                                |
-| Código de um arquivo específico             | cada arquivo passa indefinidamente quando roda sozinho              |
+Taxa de 10%. As duas execuções com abort foram a 11 e a 17, perdendo 2 e 5 casos.
 
-### O que foi corrigido de fato
+### O experimento que mudou a investigação
 
-O supertest, ao receber um servidor que não está escutando, chama `listen(0)` sozinho e
-fecha o socket ao fim da requisição. Com a app apenas inicializada, isso significava uma
-porta efêmera nova **a cada requisição**: mais de quatrocentas abertas e fechadas por
-execução. A app de teste passou a escutar uma vez por arquivo, e o supertest reutiliza o
-listener existente. Levou a taxa de ~33% para ~12% e reduziu a duração.
+A primeira rodada de hipóteses olhou para dentro do projeto — Argon2, listeners TCP,
+transformação de módulos. Nenhuma delas se sustentou quando o ciclo da suíte foi
+reproduzido **fora do Vitest**: um script que sobe a app Nest, faz requisições, fecha e
+repete, rodando contra o `dist/` já compilado pelo `nest build`.
 
-### Suspeita restante
+Esse script aborta com a mesma assinatura. Isso elimina, de uma vez, o Vitest, o `@swc/core`
+e o Rolldown: nenhum dos três participa da execução de código compilado.
 
-Resta um módulo nativo abortando durante transform/import — `@swc/core` é o único candidato
-que roda nessa fase, e a falha sempre acontece "during started state", enquanto o arquivo é
-carregado. Há um patch disponível (1.16.18 → 1.16.20).
+A partir daí a redução foi por bissecção, cada cenário com três a oito execuções de 20 a 200
+ciclos:
 
-**Não foi aplicado.** Bumpar dependência mexe no lockfile, e a fixação de versões é decisão
-de arquitetura registrada (ADR-0001). Fica como recomendação, aguardando autorização: subir
-o patch e medir dez execuções antes e depois.
+| Cenário                                          | Abortou | Conclusão                       |
+| ------------------------------------------------ | ------- | ------------------------------- |
+| App Nest + Prisma + Argon2 + requisições         | 2 de 3  | reproduz fora do Vitest         |
+| **Sem** Argon2 (hash fixo)                       | 3 de 3  | Argon2 descartado               |
+| **Sem** requisições (app sobe, escreve, fecha)   | 0 de 3  | precisa do tráfego HTTP         |
+| Sem app Nest (só Prisma + Argon2)                | 0 de 3  | consistente                     |
+| Express puro + supertest, sem middleware         | 1 de 3  | Nest, pino e helmet descartados |
+| `http.createServer` puro + supertest             | 1 de 3  | Express descartado              |
+| `http.createServer` puro + cliente `http` nativo | 1 de 6  | supertest descartado            |
 
-Enquanto isso, a suíte precisa ser olhada: uma execução com `Errors 1 error` no rodapé não
-é verde, mesmo que a linha de testes diga "passed".
+O mínimo reproduzível não tem nada do projeto dentro: **Node 24.15.0 no Windows, criando um
+servidor HTTP, fazendo algumas dezenas de requisições, fechando o servidor e repetindo.**
+
+### Causa provável, com o que a sustenta
+
+O abort está na camada de sockets do runtime — Node 24.15.0 com libuv 1.51.0 — neste
+Windows 11 build 26200, sob rotatividade alta de conexões TCP. O que sustenta isso:
+
+- reproduz sem Vitest, sem Express, sem supertest, sem Nest, sem Prisma e sem Argon2;
+- `abort()` nativo com stderr vazio: não há caminho de JavaScript que produza isso;
+- o cenário sem tráfego HTTP nunca abortou, em nenhuma configuração;
+- não há LSP de terceiro no catálogo Winsock e a proteção em tempo real do Defender está
+  desligada, então não há hook externo em socket para explicar a falha;
+- `--report-on-fatalerror` não produz relatório, consistente com `__fastfail`, que não passa
+  pelo manipulador de erro fatal do Node.
+
+Não dá para apontar a linha exata de libuv sem um dump nativo, e obter um exigiria alterar
+configuração do sistema (`LocalDumps` no registro). Isso não foi feito: é mudança de máquina
+do usuário, fora do escopo da fase.
+
+### Um experimento que foi invalidado, e o que sobrou dele
+
+Com o tráfego HTTP identificado como necessário, a hipótese seguinte foi a rotatividade de
+conexões. A suíte abre cerca de 650 conexões de loopback por execução — medido por
+TIME_WAIT, contra 17 de baseline com a máquina parada — e um agente com `keepAlive`
+reduz 200 requisições de 200 conexões para 1.
+
+A primeira comparação deu 0 de 6 nos dois braços, e estava **errada**: o braço "sem
+keep-alive" passava `agent: undefined`, que cai no `globalAgent` do Node — e esse tem
+`keepAlive` ligado por padrão desde o Node 19. Os dois braços eram o mesmo teste. Com
+`agent: false`, que desliga o pool de verdade, os braços passaram a abrir 12.000 e 200
+conexões por execução:
+
+| Braço                               | Abortou |
+| ----------------------------------- | ------- |
+| sem pool (12.000 conexões/execução) | 1 de 8  |
+| com pool (200 conexões/execução)    | 0 de 8  |
+
+Direcionalmente consistente com a rotatividade importar, e **sem poder estatístico para
+afirmar**: com taxa base na casa de 10%, oito execuções por braço não distinguem um efeito
+real de variação. Fica registrado como hipótese não resolvida, não como causa.
+
+### O que NÃO ficou estabelecido
+
+- O gatilho exato dentro do Node ou do libuv. Apontá-lo exigiria um dump nativo, e obtê-lo
+  exigiria habilitar `LocalDumps` no registro do Windows — alteração na máquina, fora do
+  escopo desta fase e não feita.
+- Se reduzir a rotatividade de conexões reduz a taxa. O experimento acima é sugestivo e
+  insuficiente.
+
+### Hipóteses descartadas, com a evidência de cada descarte
+
+| Hipótese                                        | Como foi descartada                                                                 |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Vazamento de conexão do Postgres                | conexões medidas durante a suíte: pico de 2, zero entre arquivos                    |
+| Volume de hashes Argon2 no mesmo processo       | cenário sem Argon2 abortou 3 de 3                                                   |
+| `@swc/core` ou Rolldown na transformação        | reproduz contra o `dist/` compilado, onde nenhum dos dois roda                      |
+| Vitest, pool de workers ou `isolate`            | reproduz em script Node comum, sem Vitest                                           |
+| supertest                                       | reproduz com o cliente `http` nativo                                                |
+| Express, Nest, pino-http, helmet, cookie-parser | reproduz com `http.createServer` puro                                               |
+| Exaustão de portas efêmeras                     | pico de 39 conexões em TIME_WAIT, com 64.511 portas disponíveis                     |
+| Teto de memória do processo                     | RSS entre 85 MB e 260 MB no momento do abort, e execuções limpas chegaram mais alto |
+| Antivírus ou LSP hookando Winsock               | nenhum LSP de terceiro; Defender em tempo real desligado                            |
+| Código de um arquivo de teste específico        | cada arquivo passa indefinidamente quando roda sozinho                              |
+
+### Correção de um registro anterior
+
+A versão anterior desta seção atribuía a melhora na taxa ao fim da rotatividade de portas
+efêmeras. **Essa atribuição estava errada:** a medição mostrou pico de 39 conexões em
+TIME_WAIT contra 64.511 portas disponíveis, então nunca houve exaustão, e a diferença
+observada entre as baterias cabe na variação da própria medição.
+
+A mudança que a originou — a app de teste escutar uma vez por arquivo, em vez de o supertest
+abrir uma porta por requisição — foi mantida, mas pelo que ela é de fato: um listener por
+arquivo em lugar de centenas é simplesmente melhor, e reduziu a duração da suíte. Não é
+correção da causa raiz, e não está sendo apresentada como tal.
+
+### O que NÃO foi feito, de propósito
+
+Nenhum teste foi desativado, nenhuma falha foi silenciada e nenhuma repetição automática
+(`retry`) foi configurada. Repetir até passar transformaria um abort de runtime em verde, o
+que é pior do que a instabilidade: esconderia a única evidência de que algo está errado.
+
+### Recomendação
+
+A correção está fora do projeto: trocar a versão do Node. A suspeita é específica da
+combinação Node 24.15.0 / libuv 1.51.0 com este build do Windows, e o teste decisivo é
+rodar o mesmo script mínimo em outra linha do Node (24 LTS mais recente, ou 22 LTS) e
+comparar a taxa. Isso mexe no `.nvmrc` e na matriz do CI, que são decisões de ambiente, e
+está aguardando autorização.
+
+Até lá, a limitação permanece: **uma execução com `Errors` no rodapé não é verde**, mesmo
+que a linha de testes diga "passed", e a Fase 4 não deve ser declarada encerrada enquanto
+isso valer.
 
 ---
 
