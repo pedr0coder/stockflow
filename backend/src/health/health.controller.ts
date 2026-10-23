@@ -1,21 +1,23 @@
 import { Controller, Get, HttpStatus, Res } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Response } from 'express';
+import { Public } from '../common/decorators/public.decorator';
 import { HealthService } from './health.service';
 import { LivenessResponseDto, ReadinessResponseDto } from './dto/health-response.dto';
 
 /**
  * Endpoints de infraestrutura.
  *
- * Públicos (docs/05-api.md §5.12). Quando os guards globais entrarem na Fase 4,
- * estas duas rotas precisam receber `@Public()`: o padrão do projeto é negar, e
- * sem o decorator o orquestrador passaria a receber 401 no health check.
+ * Públicos (docs/05-api.md §5.12), marcados com `@Public()` porque os guards
+ * globais da Fase 4 negam por padrão. Sem o decorator, o orquestrador passaria
+ * a receber 401 no health check e tiraria a aplicação do balanceador.
  */
 @ApiTags('Infraestrutura')
 @Controller('health')
 export class HealthController {
   constructor(private readonly health: HealthService) {}
 
+  @Public()
   @Get()
   @ApiOperation({
     summary: 'Liveness',
@@ -28,6 +30,7 @@ export class HealthController {
     return { status: 'ok' };
   }
 
+  @Public()
   @Get('ready')
   @ApiOperation({
     summary: 'Readiness',
