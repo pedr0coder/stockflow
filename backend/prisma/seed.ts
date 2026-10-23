@@ -24,22 +24,33 @@ import { hash } from '@node-rs/argon2';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { config as loadEnv } from 'dotenv';
 import { v7 as uuidv7 } from 'uuid';
+import { ARGON2_OPTIONS } from '../src/auth/auth.service';
+import { MIN_PASSWORD_LENGTH } from '../src/auth/dto/login.dto';
 import { PrismaClient } from '../src/generated/prisma/client';
 import { UnitOfMeasure, UserRole } from '../src/generated/prisma/enums';
 
 loadEnv({ path: resolve(process.cwd(), '../.env'), override: false, quiet: true });
 
 /**
- * Parâmetros do Argon2id, iguais aos da aplicação (ADR-0004 e §8.1).
+ * Recusa rodar contra produção.
  *
- * Repetidos aqui porque o seed não sobe o container do Nest. Quando o módulo de
- * auth entrar na Fase 4, estes valores passam a vir de uma constante única e
- * este bloco desaparece.
+ * O seed cria contas de demonstração com senha vinda do `.env`. Em produção
+ * isso é uma porta de entrada com credencial conhecida pela equipe inteira, e
+ * o `upsert` por e-mail reativaria a conta mesmo que alguém a tivesse
+ * inativado. Idempotência não é a mesma coisa que ser seguro reexecutar em
+ * qualquer lugar: aqui o alvo é que precisa ser verificado.
  */
-const ARGON2_OPTIONS = { memoryCost: 19_456, timeCost: 2, parallelism: 1 } as const;
+function assertAmbienteDeDesenvolvimento(): void {
+  const env = process.env['NODE_ENV'];
 
-/** Política de senha da §8.1: mínimo de 10 caracteres. */
-const MIN_PASSWORD_LENGTH = 10;
+  if (env === 'production') {
+    throw new Error(
+      'Seed recusado: NODE_ENV=production.\n' +
+        'Este seed cria usuários de demonstração com senha de desenvolvimento. ' +
+        'Popular produção é tarefa de migração de dados, não de seed.',
+    );
+  }
+}
 
 interface SeedUser {
   name: string;
@@ -502,6 +513,8 @@ function readSeedPassword(envVar: string): string {
 }
 
 async function main(): Promise<void> {
+  assertAmbienteDeDesenvolvimento();
+
   const connectionString = process.env['DATABASE_URL'];
 
   if (!connectionString) {
