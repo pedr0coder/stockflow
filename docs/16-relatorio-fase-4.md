@@ -440,17 +440,21 @@ Nenhum teste foi desativado, nenhuma falha foi silenciada e nenhuma repetição 
 (`retry`) foi configurada. Repetir até passar transformaria um abort de runtime em verde, o
 que é pior do que a instabilidade: esconderia a única evidência de que algo está errado.
 
-### Recomendação
+### Situação e próximo passo
 
-A correção está fora do projeto: trocar a versão do Node. A suspeita é específica da
-combinação Node 24.15.0 / libuv 1.51.0 com este build do Windows, e o teste decisivo é
-rodar o mesmo script mínimo em outra linha do Node (24 LTS mais recente, ou 22 LTS) e
-comparar a taxa. Isso mexe no `.nvmrc` e na matriz do CI, que são decisões de ambiente, e
-está aguardando autorização.
+**A investigação está encerrada por decisão, não por conclusão.** Fica como pendência
+documentada.
 
-Até lá, a limitação permanece: **uma execução com `Errors` no rodapé não é verde**, mesmo
-que a linha de testes diga "passed", e a Fase 4 não deve ser declarada encerrada enquanto
-isso valer.
+O próximo passo, quando houver interesse em retomá-la, é o teste decisivo que não foi
+feito: rodar o script mínimo em outra linha do Node — 24 LTS mais recente ou 22 LTS — e
+comparar a taxa. Se a taxa cair a zero, confirma a suspeita de que o defeito é da
+combinação Node 24.15.0 / libuv 1.51.0 com este build do Windows; se não cair, a suspeita
+morre e sobra o dump nativo. Trocar a linha do Node mexe no `.nvmrc` e na matriz do CI, que
+são decisões de ambiente.
+
+Enquanto a pendência existir, a limitação vale: **uma execução com `Errors` no rodapé não é
+verde**, mesmo que a linha de testes diga "passed", e a Fase 4 não deve ser declarada
+encerrada enquanto isso for verdade.
 
 ---
 
