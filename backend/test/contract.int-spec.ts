@@ -8,12 +8,13 @@ import { createTestApp, type TestApp } from './helpers/app';
  * ┌──────────────────────────────────────────────────────────────────────────┐
  * │ A SUPERFÍCIE DE ROTAS, FIXADA CONTRA O CONTRATO.                         │
  * │                                                                          │
- * │ A docs/05-api.md documenta 32 rotas nas seções desta fase (§5.2 a §5.6,  │
- * │ §5.11 e §5.12). Uma delas, `GET /products/:id/movements`, foi adiada     │
- * │ para a Fase 5 por decisão aprovada: ela devolve histórico de             │
- * │ movimentação, e o histórico não existe antes do módulo que o produz.     │
+ * │ A Fase 4 fechou com 31 rotas (32 documentadas menos                      │
+ * │ `GET /products/:id/movements`, adiada por decisão registrada em          │
+ * │ docs/15-plano-fase-4.md §15.3). O marco 5A da Fase 5 soma as 6 rotas de  │
+ * │ `/stock-movements` e a retomada de `/products/:id/movements             │
+ * │ (docs/17-plano-fase-5.md §17.2):                                         │
  * │                                                                          │
- * │   32 documentadas − 1 adiada = 31 implementadas                          │
+ * │   31 da Fase 4 + 6 do marco 5A = 37                                      │
  * │                                                                          │
  * │ A lista abaixo é essa conta, escrita por extenso. Um teste que só        │
  * │ contasse rotas passaria com a rota errada implementada; este compara     │
@@ -52,12 +53,20 @@ const ROTAS_ESPERADAS: readonly string[] = [
   'PATCH /api/v1/suppliers/{id}/status',
   'GET /api/v1/suppliers/{id}/products',
 
-  // §5.6 Produtos (sem /products/{id}/movements, que é da Fase 5)
+  // §5.6 Produtos
   'GET /api/v1/products',
   'POST /api/v1/products',
   'GET /api/v1/products/{id}',
   'PATCH /api/v1/products/{id}',
   'PATCH /api/v1/products/{id}/status',
+  'GET /api/v1/products/{id}/movements',
+
+  // §5.7 Movimentações de estoque (Fase 5, marco 5A)
+  'GET /api/v1/stock-movements',
+  'GET /api/v1/stock-movements/{id}',
+  'POST /api/v1/stock-movements/in',
+  'POST /api/v1/stock-movements/out',
+  'POST /api/v1/stock-movements/adjustment',
 
   // §5.11 Auditoria
   'GET /api/v1/audit',
@@ -68,14 +77,13 @@ const ROTAS_ESPERADAS: readonly string[] = [
   'GET /api/v1/health/ready',
 ];
 
-/** Rotas de fases futuras. Nenhuma delas deve existir ainda. */
+/** Rotas do marco 5B. Nenhuma delas deve existir ainda. */
 const ROTAS_DE_FASES_FUTURAS: readonly [string, string][] = [
-  ['get', '/api/v1/stock-movements'],
-  ['post', '/api/v1/stock-movements/in'],
-  ['post', '/api/v1/stock-movements/out'],
+  ['post', '/api/v1/inventories'],
   ['get', '/api/v1/inventories'],
   ['get', '/api/v1/dashboard/summary'],
-  ['get', '/api/v1/reports/stock'],
+  ['get', '/api/v1/reports/low-stock'],
+  ['get', '/api/v1/reports/stock-reconciliation'],
 ];
 
 describe('Contrato da API (integração)', () => {
@@ -100,9 +108,9 @@ describe('Contrato da API (integração)', () => {
     await harness.close();
   });
 
-  it('implementa exatamente 31 rotas', () => {
+  it('implementa exatamente 37 rotas (marco 5A)', () => {
     expect(rotas).toHaveLength(ROTAS_ESPERADAS.length);
-    expect(ROTAS_ESPERADAS).toHaveLength(31);
+    expect(ROTAS_ESPERADAS).toHaveLength(37);
   });
 
   it('não falta nenhuma rota do contrato', () => {
@@ -119,16 +127,8 @@ describe('Contrato da API (integração)', () => {
     expect(sobrando).toEqual([]);
   });
 
-  it('GET /products/:id/movements ainda NÃO existe, e isso é a decisão registrada', async () => {
-    expect(rotas).not.toContain('GET /api/v1/products/{id}/movements');
-
-    // Também não responde por acidente de roteamento: `:id/movements` poderia
-    // cair em outro handler com parâmetro curinga.
-    const response = await request(app.getHttpServer()).get(
-      '/api/v1/products/0199a000-0000-7000-8000-000000000000/movements',
-    );
-
-    expect(response.status).toBe(404);
+  it('GET /products/:id/movements existe desde a Fase 5 (marco 5A)', () => {
+    expect(rotas).toContain('GET /api/v1/products/{id}/movements');
   });
 
   it.each(ROTAS_DE_FASES_FUTURAS)(

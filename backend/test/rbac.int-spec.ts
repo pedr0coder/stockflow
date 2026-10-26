@@ -169,6 +169,11 @@ describe('RBAC (integração)', () => {
       },
       { method: 'get', path: '/api/v1/products', allow: [...Object.values(UserRole)] },
 
+      // Movimentações de estoque (Fase 5, marco 5A): histórico global para os
+      // três papéis. O ajuste manual (ADMIN e MANAGER, ADR-0003) depende de
+      // um produto real e é testado à parte, em "matriz nas rotas com id".
+      { method: 'get', path: '/api/v1/stock-movements', allow: [...Object.values(UserRole)] },
+
       // Auditoria global: só ADMIN.
       { method: 'get', path: '/api/v1/audit', allow: [UserRole.ADMIN] },
     ];
@@ -291,6 +296,64 @@ describe('RBAC (integração)', () => {
         .set('Authorization', bearer(operator));
 
       expect(response.status).toBe(403);
+    });
+
+    /**
+     * Ajuste manual de estoque: só ADMIN e MANAGER (ADR-0003, "autorização
+     * explícita" para alterar o saldo fora de uma entrada/saída físicas).
+     */
+    it('OPERATOR não ajusta o saldo manualmente', async () => {
+      const categoria = await createCategory(prisma);
+      const produto = await createProduct(prisma, categoria.id, { currentStock: '10.000' });
+
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/stock-movements/adjustment')
+        .set('Authorization', bearer(operator))
+        .send({
+          productId: produto.id,
+          finalQuantity: '5.000',
+          reason: 'CORRECTION',
+          note: 'Tentativa RBAC',
+        });
+
+      expect(response.status).toBe(403);
+      expect(response.body.code).toBe('FORBIDDEN_ROLE');
+    });
+
+    it.each([UserRole.ADMIN, UserRole.MANAGER])('%s ajusta o saldo manualmente', async (role) => {
+      const categoria = await createCategory(prisma);
+      const produto = await createProduct(prisma, categoria.id, { currentStock: '10.000' });
+      const session = sessionFor(role);
+
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/stock-movements/adjustment')
+        .set('Authorization', bearer(session))
+        .send({
+          productId: produto.id,
+          finalQuantity: '5.000',
+          reason: 'CORRECTION',
+          note: `RBAC ${role}`,
+        });
+
+      expect(response.status).toBe(201);
+    });
+
+    it.each(Object.values(UserRole))('%s registra entrada e saída de estoque', async (role) => {
+      const categoria = await createCategory(prisma);
+      const produto = await createProduct(prisma, categoria.id, { currentStock: '10.000' });
+      const session = sessionFor(role);
+
+      const entrada = await request(app.getHttpServer())
+        .post('/api/v1/stock-movements/in')
+        .set('Authorization', bearer(session))
+        .send({ productId: produto.id, quantity: '1.000', reason: 'PURCHASE' });
+      expect(entrada.status).toBe(201);
+
+      const saida = await request(app.getHttpServer())
+        .post('/api/v1/stock-movements/out')
+        .set('Authorization', bearer(session))
+        .send({ productId: produto.id, quantity: '1.000', reason: 'SALE' });
+      expect(saida.status).toBe(201);
     });
   });
 
