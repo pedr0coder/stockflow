@@ -1228,7 +1228,7 @@ sem movimento, não 404.
 | Suíte                              | Resultado                                                             |
 | ---------------------------------- | --------------------------------------------------------------------- |
 | Unitários (`npm run test`)         | 199/199, 16 arquivos                                                  |
-| Integração (`npm run test:int`)    | 379/379, 14 arquivos — executada **5 vezes** ao longo desta validação |
+| Integração (`npm run test:int`)    | 379/379, 14 arquivos — executada **7 vezes** ao longo desta validação |
 | `lint` / `typecheck` / `build`     | limpos                                                                |
 | `prettier --check`                 | limpo (após correção de formatação em 16 arquivos novos/modificados)  |
 | `npm audit` (raiz, backend, front) | 0 vulnerabilidades nas três árvores                                   |
@@ -1236,12 +1236,15 @@ sem movimento, não 404.
 
 ### Instabilidade do Node 24 no Windows
 
-Das 5 execuções completas da suíte de integração ao longo desta validação, **1 teve um abort nativo
-do processo filho do Vitest** (`ChildProcess._handle.onexit`), não uma falha de asserção —
-13 de 14 arquivos completaram, 1 arquivo não terminou de reportar. A repetição imediata,
-sem qualquer mudança de código, completou 379/379. Registrado como está, sem retry
+Das 7 execuções completas da suíte de integração ao longo desta validação, **2 tiveram um
+abort nativo do processo filho do Vitest** (`ChildProcess._handle.onexit`), não uma falha de
+asserção: uma antes dos commits (13 de 14 arquivos completaram) e uma depois, sobre o estado
+já commitado (343 de 379 testes completados antes do abort). Em ambos os casos a repetição
+imediata, sem qualquer mudança de código, completou 379/379. Registrado como está, sem retry
 automático e sem atribuir a causa a um defeito da aplicação: é a mesma instabilidade já
-anotada na linha de base do §17.1, ainda não resolvida, e não resolvida por este marco.
+anotada na linha de base do §17.1, ainda não resolvida, e não resolvida por este marco. A
+recorrência depois do commit mostra que não é efeito de nenhuma mudança feita durante a
+validação — é intermitente, como já era antes.
 
 ### Desvios do planejado em v3
 
