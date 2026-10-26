@@ -218,6 +218,13 @@ model Product {
   @@index([isActive, name])
   @@index([categoryId])
   @@index([supplierId])
+  /// Índice GIN trigram, criado na migration da Fase 2 (SQL escrito à mão,
+  /// o Prisma não declara CHECK nem GIN no schema). Declarado aqui a partir
+  /// da Fase 5 (ADR pendente de registro, D19) só para fechar o drift que o
+  /// `prisma migrate diff` relatava contra este índice: sem a declaração, um
+  /// `migrate dev` rodado por engano removeria o índice de busca. A
+  /// declaração não gera nenhum SQL por si: o índice físico já existe.
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "products_name_trgm_idx")
   @@map("products")
 }
 
