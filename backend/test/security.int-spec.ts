@@ -1,6 +1,7 @@
 import { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { REQUEST_BODY_LIMIT_BYTES } from '../src/bootstrap';
 import { PrismaService } from '../src/prisma/prisma.service';
 import { UserRole } from '../src/generated/prisma/enums';
 import {
@@ -376,7 +377,216 @@ describe('Segurança (integração)', () => {
       expect(response.body.message).not.toContain('position');
     });
   });
+
+  /**
+   * O limite é decisão declarada (`REQUEST_BODY_LIMIT_BYTES`), e não herança do
+   * padrão do Express. O caso acima, com 2 MB, passaria com qualquer valor
+   * razoável; estes fixam a FRONTEIRA, e quebram se alguém trocar o número ou
+   * voltar a depender do padrão (100 KiB): o caso "no limite" ainda passaria,
+   * mas o "um byte acima" deixaria de ser 413.
+   */
+  describe('o limite do corpo é o declarado, byte a byte', () => {
+    it('corpo exatamente no limite é aceito pelo parser e cai na validação', async () => {
+      const sessao = await createSession(app, prisma, UserRole.MANAGER);
+
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/categories')
+        .set('Authorization', bearer(sessao))
+        .set('Content-Type', 'application/json')
+        .send(categoriaComCorpoDe(REQUEST_BODY_LIMIT_BYTES));
+
+      // 400 de VALIDAÇÃO (o nome tem 80 caracteres no máximo): prova que o
+      // parser leu o corpo inteiro. Um 413 aqui significaria limite menor que
+      // o declarado.
+      expect(response.status).toBe(400);
+      expect(response.body.code).toBe('VALIDATION_ERROR');
+      expect(response.body.details.fields).toHaveProperty('name');
+    });
+
+    it('um byte acima do limite responde 413', async () => {
+      const sessao = await createSession(app, prisma, UserRole.MANAGER);
+
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/categories')
+        .set('Authorization', bearer(sessao))
+        .set('Content-Type', 'application/json')
+        .send(categoriaComCorpoDe(REQUEST_BODY_LIMIT_BYTES + 1));
+
+      expect(response.status).toBe(413);
+    });
+
+    it('o 413 segue o contrato único de erro, em português, sem vazar a biblioteca', async () => {
+      const sessao = await createSession(app, prisma, UserRole.MANAGER);
+
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/categories')
+        .set('Authorization', bearer(sessao))
+        .set('Content-Type', 'application/json')
+        .send(categoriaComCorpoDe(REQUEST_BODY_LIMIT_BYTES + 1));
+
+      expect(Object.keys(response.body).sort()).toEqual(
+        ['code', 'message', 'path', 'requestId', 'statusCode', 'timestamp'].sort(),
+      );
+      expect(response.body).toMatchObject({
+        statusCode: 413,
+        code: 'PAYLOAD_TOO_LARGE',
+        message: 'Corpo da requisição acima do limite aceito.',
+        path: '/api/v1/categories',
+      });
+      // A mensagem da biblioteca é em inglês ("request entity too large") e cita
+      // bytes. `\blimit\b` e não `limit`: "limite", do texto do projeto, contém
+      // a segunda forma e não é vazamento.
+      expect(JSON.stringify(response.body)).not.toMatch(/entity too large|bytes|\blimit\b/i);
+    });
+
+    it('o limite vale antes da autenticação, inclusive na rota pública de login', async () => {
+      // O corpo é lido antes dos guards. Sem isto, qualquer pessoa na internet
+      // faria o servidor ler e interpretar o volume que quisesse em /auth/login.
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .set('Content-Type', 'application/json')
+        .send(categoriaComCorpoDe(REQUEST_BODY_LIMIT_BYTES + 1));
+
+      expect(response.status).toBe(413);
+      expect(response.body.code).toBe('PAYLOAD_TOO_LARGE');
+    });
+
+    it('requisição sem token e com corpo enorme é 413, não 401', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/products')
+        .set('Content-Type', 'application/json')
+        .send(categoriaComCorpoDe(REQUEST_BODY_LIMIT_BYTES + 1));
+
+      // Documenta a ordem real: o parser roda antes do guard. É o que o limite
+      // precisa ser para proteger a rota pública; só vale como comportamento
+      // se alguém reordenar os middlewares e este caso apontar.
+      expect(response.status).toBe(413);
+    });
+
+    it('o limite também vale para corpo de formulário (urlencoded)', async () => {
+      const sessao = await createSession(app, prisma, UserRole.MANAGER);
+
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/categories')
+        .set('Authorization', bearer(sessao))
+        .type('form')
+        .send(`name=${'a'.repeat(REQUEST_BODY_LIMIT_BYTES)}`);
+
+      expect(response.status).toBe(413);
+      expect(response.body.code).toBe('PAYLOAD_TOO_LARGE');
+    });
+  });
+
+  /**
+   * Corpo ilegível é erro de CLIENTE, em todas as formas que ele pode ter.
+   *
+   * O defeito que a Fase 4 encontrou (500 para JSON malformado) tinha uma causa
+   * só, mas o corpo errado chega de muitas formas. Cada linha é uma delas, e
+   * a asserção é a mesma: 4xx no contrato único, nunca 5xx.
+   */
+  describe('corpo ilegível é sempre 4xx no contrato único', () => {
+    const CASOS: {
+      nome: string;
+      corpo: string;
+      tipo?: string;
+      cabecalhos?: Record<string, string>;
+      status: number;
+    }[] = [
+      { nome: 'JSON truncado', corpo: '{"name":"Categ', status: 400 },
+      { nome: 'vírgula sobrando', corpo: '{"name":"Categoria",}', status: 400 },
+      { nome: 'aspas simples', corpo: "{'name':'Categoria'}", status: 400 },
+      { nome: 'texto solto', corpo: 'isto não é json', status: 400 },
+      { nome: 'string no topo (modo estrito)', corpo: '"Categoria"', status: 400 },
+      { nome: 'número no topo (modo estrito)', corpo: '42', status: 400 },
+      { nome: 'null no topo (modo estrito)', corpo: 'null', status: 400 },
+      { nome: 'corpo vazio com content-type JSON', corpo: '', status: 400 },
+      { nome: 'array no lugar de objeto', corpo: '[{"name":"Categoria"}]', status: 400 },
+      {
+        nome: 'charset não suportado',
+        corpo: '{"name":"Categoria"}',
+        // Fora da família `utf-*`: o body-parser só recusa o que não começa assim,
+        // então `utf-7` é aceito e decodificado (comportamento da biblioteca, e
+        // não defeito). `iso-8859-1` é o caso que ele recusa com 415.
+        tipo: 'application/json; charset=iso-8859-1',
+        status: 415,
+      },
+      {
+        nome: 'content-encoding desconhecido',
+        corpo: '{"name":"Categoria"}',
+        cabecalhos: { 'Content-Encoding': 'desconhecido' },
+        status: 415,
+      },
+      {
+        nome: 'JSON válido com content-type de texto (corpo não interpretado)',
+        corpo: '{"name":"Categoria"}',
+        tipo: 'text/plain',
+        status: 400,
+      },
+    ];
+
+    it.each(CASOS)('$nome responde $status no contrato único', async (caso) => {
+      const sessao = await createSession(app, prisma, UserRole.MANAGER);
+
+      let chamada = request(app.getHttpServer())
+        .post('/api/v1/categories')
+        .set('Authorization', bearer(sessao))
+        .set('Content-Type', caso.tipo ?? 'application/json');
+
+      for (const [nome, valor] of Object.entries(caso.cabecalhos ?? {})) {
+        chamada = chamada.set(nome, valor);
+      }
+
+      const response = await chamada.send(caso.corpo);
+
+      expect(response.status).toBe(caso.status);
+      expect(response.status).toBeLessThan(500);
+      expect(Object.keys(response.body).sort()).toEqual(
+        expect.arrayContaining(['code', 'message', 'path', 'requestId', 'statusCode', 'timestamp']),
+      );
+      expect(response.body.statusCode).toBe(caso.status);
+      expect(response.body.requestId).toEqual(expect.any(String));
+      // Nenhuma mensagem de biblioteca (inglês, posição no buffer, nome de módulo).
+      expect(response.body.message).not.toMatch(
+        /JSON|position|token|charset|encoding|body-parser/i,
+      );
+      expect(JSON.stringify(response.body)).not.toMatch(/node_modules|\.ts:|stack/);
+    });
+
+    it('JSON malformado não cria nada: o banco continua vazio', async () => {
+      const sessao = await createSession(app, prisma, UserRole.MANAGER);
+
+      await request(app.getHttpServer())
+        .post('/api/v1/categories')
+        .set('Authorization', bearer(sessao))
+        .set('Content-Type', 'application/json')
+        .send('{"name":"Categoria",}')
+        .expect(400);
+
+      expect(await prisma.category.count()).toBe(0);
+    });
+  });
 });
+
+/**
+ * Corpo JSON de categoria com EXATAMENTE `bytes` bytes.
+ *
+ * Só ASCII, então caractere e byte coincidem. O nome fica longo demais de
+ * propósito: o que se mede aqui é o parser, e o caso que passa dele precisa
+ * terminar na validação, nunca criando registro.
+ */
+function categoriaComCorpoDe(bytes: number): string {
+  const prefixo = '{"name":"';
+  const sufixo = '"}';
+  const corpo = prefixo + 'a'.repeat(bytes - prefixo.length - sufixo.length) + sufixo;
+
+  if (Buffer.byteLength(corpo) !== bytes) {
+    throw new Error(
+      `fixture com ${String(Buffer.byteLength(corpo))} bytes, esperado ${String(bytes)}`,
+    );
+  }
+
+  return corpo;
+}
 
 /** Produto mínimo, sem depender do helper de fixture com nome aleatório. */
 async function createProdutoSimples(prisma: PrismaService, categoryId: string): Promise<void> {

@@ -8,6 +8,12 @@ import {
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DomainError } from '../errors/domain.error';
 import { ApiErrorResponse, ErrorCode } from '../errors/error-codes';
+import {
+  CategoryNotFoundError,
+  ProductNotFoundError,
+  SupplierNotFoundError,
+  UserNotFoundError,
+} from '../errors/not-found.errors';
 import { AllExceptionsFilter } from './all-exceptions.filter';
 
 /** Erro de negócio concreto, só para o teste. */
@@ -263,6 +269,34 @@ describe('AllExceptionsFilter', () => {
       filter.catch(new NotFoundException('Fornecedor não encontrado.'), host);
 
       expect(captured.body.message).toBe('Fornecedor não encontrado.');
+    });
+  });
+
+  describe('erro de recurso inexistente (DomainError)', () => {
+    it.each([
+      new CategoryNotFoundError(),
+      new ProductNotFoundError(),
+      new SupplierNotFoundError(),
+      new UserNotFoundError(),
+    ])('$name responde 404 com a mensagem do projeto, sem details', (erro) => {
+      const { host, captured } = makeHost({ url: '/api/v1/products/abc' });
+
+      filter.catch(erro, host);
+
+      expect(captured.status).toBe(HttpStatus.NOT_FOUND);
+      expect(captured.body.statusCode).toBe(HttpStatus.NOT_FOUND);
+      expect(captured.body.code).toBe(ErrorCode.NOT_FOUND);
+      expect(captured.body.message).toBe(erro.message);
+      expect('details' in captured.body).toBe(false);
+    });
+
+    it('é registrado como 4xx esperado, não como falha do servidor', () => {
+      const { host } = makeHost();
+
+      filter.catch(new ProductNotFoundError(), host);
+
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+      expect(logger.error).not.toHaveBeenCalled();
     });
   });
 
