@@ -10,6 +10,9 @@ import {
 import { Roles } from '../common/decorators/roles.decorator';
 import type { PageDto } from '../common/dto/page.dto';
 import { UserRole } from '../generated/prisma/enums';
+import { MovementDto } from '../stock-movements/dto/movement.dto';
+import { QueryMovementsDto } from '../stock-movements/dto/query-movements.dto';
+import { StockMovementsService } from '../stock-movements/stock-movements.service';
 import {
   ChangeProductStatusDto,
   CreateProductDto,
@@ -24,9 +27,9 @@ import { ProductsService } from './products.service';
  *
  * Leitura para os três papéis, escrita para ADMIN e MANAGER (§5.6).
  *
- * `GET /products/:id/movements` não está aqui: ele lê movimentações, cujo
- * módulo é da Fase 5. A decisão de adiá-lo está registrada em
- * docs/15-plano-fase-4.md §15.3, item I1.
+ * `GET /products/:id/movements` chegou na Fase 5 (adiado da Fase 4 por
+ * decisão registrada em docs/15-plano-fase-4.md §15.3, item I1): lê o
+ * histórico pelo `StockMovementsService`, e não duplica a lógica de consulta.
  *
  * Não há DELETE. Inativação preserva o histórico.
  */
@@ -34,7 +37,10 @@ import { ProductsService } from './products.service';
 @ApiBearerAuth('access-token')
 @Controller('products')
 export class ProductsController {
-  constructor(private readonly products: ProductsService) {}
+  constructor(
+    private readonly products: ProductsService,
+    private readonly movements: StockMovementsService,
+  ) {}
 
   @Get()
   @ApiOperation({
@@ -51,6 +57,23 @@ export class ProductsController {
   @ApiOkResponse({ type: ProductDto })
   findOne(@Param('id', new ParseUUIDPipe({ version: '7' })) id: string): Promise<ProductDto> {
     return this.products.findOne(id);
+  }
+
+  @Get(':id/movements')
+  @ApiOperation({
+    summary: 'Histórico de movimentações do produto',
+    description: 'Produto sem movimentação devolve lista vazia, não 404.',
+  })
+  @ApiOkResponse({ type: MovementDto, isArray: true })
+  async findMovements(
+    @Param('id', new ParseUUIDPipe({ version: '7' })) id: string,
+    @Query() query: QueryMovementsDto,
+  ): Promise<PageDto<MovementDto>> {
+    // 404 do PRODUTO vem daqui, antes de qualquer consulta ao histórico —
+    // senão um id inexistente devolveria página vazia em vez de 404.
+    await this.products.findOne(id);
+
+    return this.movements.findByProduct(id, query);
   }
 
   @Post()
