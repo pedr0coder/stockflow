@@ -9,6 +9,7 @@ import { AuthModule } from './auth/auth.module';
 import { AuditModule } from './audit/audit.module';
 import { CategoriesModule } from './categories/categories.module';
 import { ProductsModule } from './products/products.module';
+import { StockMovementsModule } from './stock-movements/stock-movements.module';
 import { SuppliersModule } from './suppliers/suppliers.module';
 import { UsersModule } from './users/users.module';
 import { AuditInterceptor } from './common/interceptors/audit.interceptor';
@@ -142,6 +143,7 @@ const REDACTED_PATHS = [
     CategoriesModule,
     SuppliersModule,
     ProductsModule,
+    StockMovementsModule,
   ],
   providers: [
     /**
