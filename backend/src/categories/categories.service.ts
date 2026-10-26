@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { v7 as uuidv7 } from 'uuid';
 import { AuditAction, AuditService } from '../audit/audit.service';
 import { buildPage, type PageDto } from '../common/dto/page.dto';
+import { CategoryNotFoundError } from '../common/errors/not-found.errors';
 import { CategoryHasProductsError, UniqueConstraintError } from '../common/errors/resource.errors';
 import { resolveSortColumn, toSkipTake } from '../common/utils/pagination';
 import { searchTerm } from '../common/utils/search';
@@ -50,7 +51,7 @@ export class CategoriesService {
     const category = await this.prisma.category.findUnique({ where: { id } });
 
     if (!category) {
-      throw new NotFoundException('Categoria não encontrada.');
+      throw new CategoryNotFoundError();
     }
 
     return category;

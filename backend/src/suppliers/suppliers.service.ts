@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { v7 as uuidv7 } from 'uuid';
 import { AuditAction, AuditService } from '../audit/audit.service';
 import { buildPage, type PageDto } from '../common/dto/page.dto';
+import { SupplierNotFoundError } from '../common/errors/not-found.errors';
 import { UniqueConstraintError } from '../common/errors/resource.errors';
 import { resolveSortColumn, toSkipTake } from '../common/utils/pagination';
 import { searchTerm } from '../common/utils/search';
@@ -54,7 +55,7 @@ export class SuppliersService {
     const supplier = await this.prisma.supplier.findUnique({ where: { id } });
 
     if (!supplier) {
-      throw new NotFoundException('Fornecedor não encontrado.');
+      throw new SupplierNotFoundError();
     }
 
     return supplier;

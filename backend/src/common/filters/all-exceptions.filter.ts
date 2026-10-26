@@ -53,10 +53,14 @@ const CLIENT_ERROR_THRESHOLD = 400;
  * │ e aplica o texto padrão do status.                                        │
  * │                                                                            │
  * │ É uma lista de exclusão, e isso tem o defeito óbvio de listas de exclusão: │
- * │ a próxima mensagem de framework não estará aqui. A alternativa — confiar   │
- * │ só em mensagem de erro de domínio — exigiria converter todo               │
- * │ `NotFoundException('...')` dos services em classe própria, e essa troca    │
- * │ está registrada como pendência, não feita de improviso no meio da fase.   │
+ * │ a próxima mensagem de framework não estará aqui. Os `NotFoundException`    │
+ * │ dos services já viraram `DomainError` (`not-found.errors.ts`), que não     │
+ * │ passa por esta lista, mas ela segue necessária: o `BadRequestException`    │
+ * │ de `pagination.ts` ainda carrega mensagem do projeto dentro de uma         │
+ * │ exceção do framework, e as do Nest (`Cannot GET`, `ThrottlerException`)    │
+ * │ continuam chegando aqui. Inverter a regra para "só mensagem de             │
+ * │ `DomainError`" exigiria converter também esse caso, e fica para quando     │
+ * │ houver outro motivo para mexer nele.                                      │
  * │                                                                            │
  * │ Os dois últimos padrões entraram porque os testes de segurança pegaram as  │
  * │ mensagens vazando na resposta.                                            │

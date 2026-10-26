@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { v7 as uuidv7 } from 'uuid';
 import { AuditAction, AuditService } from '../audit/audit.service';
 import { buildPage, type PageDto } from '../common/dto/page.dto';
+import { ProductNotFoundError } from '../common/errors/not-found.errors';
 import { BusinessRuleError, SkuAlreadyExistsError } from '../common/errors/resource.errors';
 import { resolveSortColumn, toSkipTake } from '../common/utils/pagination';
 import { searchTerm } from '../common/utils/search';
@@ -66,7 +67,7 @@ export class ProductsService {
     const product = await this.prisma.product.findUnique({ where: { id } });
 
     if (!product) {
-      throw new NotFoundException('Produto não encontrado.');
+      throw new ProductNotFoundError();
     }
 
     return product as unknown as ProductDto;

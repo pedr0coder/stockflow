@@ -1,10 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { verify } from '@node-rs/argon2';
 import { v7 as uuidv7 } from 'uuid';
 import { AuditAction, AuditService } from '../audit/audit.service';
 import { AuthService } from '../auth/auth.service';
 import { TokenService } from '../auth/token.service';
 import { InvalidCredentialsError } from '../common/errors/auth.errors';
+import { UserNotFoundError } from '../common/errors/not-found.errors';
 import { BusinessRuleError, EmailAlreadyExistsError } from '../common/errors/resource.errors';
 import { buildPage, type PageDto } from '../common/dto/page.dto';
 import { resolveSortColumn, toSkipTake } from '../common/utils/pagination';
@@ -62,7 +63,7 @@ export class UsersService {
     const user = await this.prisma.user.findUnique({ where: { id } });
 
     if (!user) {
-      throw new NotFoundException('Usuário não encontrado.');
+      throw new UserNotFoundError();
     }
 
     return user;
@@ -207,7 +208,7 @@ export class UsersService {
     });
 
     if (!user) {
-      throw new NotFoundException('Usuário não encontrado.');
+      throw new UserNotFoundError();
     }
 
     const matches = await verify(user.passwordHash, dto.currentPassword).catch(() => false);

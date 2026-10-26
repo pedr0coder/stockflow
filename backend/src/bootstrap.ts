@@ -15,6 +15,30 @@ export const API_PREFIX = 'api/v1';
 export const DOCS_PATH = 'api/docs';
 
 /**
+ * Teto do corpo de requisição, em bytes (16 KiB).
+ *
+ * ┌────────────────────────────────────────────────────────────────────────────┐
+ * │ Por que 16 KiB. Todo endpoint de escrita recebe UM recurso, nunca lista, e │
+ * │ cada campo de texto tem `MaxLength` no DTO. O maior corpo legítimo é o de  │
+ * │ produto: SKU 40 + nome 160 + descrição 1000 + dois UUIDs + decimais e      │
+ * │ chaves, perto de 1,5 mil caracteres. No pior caso de codificação, com todo │
+ * │ caractere escapado como `\uXXXX` (6 bytes), isso dá cerca de 9 KiB. O      │
+ * │ teto fica ~1,8x acima dele: nenhum cliente correto esbarra, e quem manda   │
+ * │ mais está errado ou hostil.                                                │
+ * │                                                                            │
+ * │ Por que não deixar o padrão. O Express aceita 100 KiB sem que ninguém o    │
+ * │ tenha escolhido. É ~11x o pior caso real, e o servidor lê e interpreta     │
+ * │ esse volume ANTES de qualquer guard: o corpo é lido antes da autenticação, │
+ * │ então vale também para a rota pública de login.                            │
+ * │                                                                            │
+ * │ Se um endpoint legitimamente maior aparecer (importação em lote, por       │
+ * │ exemplo), o caminho é um parser com limite próprio naquela rota, e não     │
+ * │ subir este valor para todas.                                               │
+ * └────────────────────────────────────────────────────────────────────────────┘
+ */
+export const REQUEST_BODY_LIMIT_BYTES = 16 * 1024;
+
+/**
  * Configuração da aplicação, compartilhada entre produção e teste.
  *
  * Esta função existe para resolver um problema concreto: se o `main.ts`
@@ -84,6 +108,21 @@ export function configureApp(app: NestExpressApplication): INestApplication {
     exposedHeaders: ['X-Request-Id'],
     maxAge: 86_400,
   });
+
+  /**
+   * Parsers de corpo com limite declarado.
+   *
+   * O Nest só registra os seus (com o padrão de 100 KiB) quando não encontra
+   * `jsonParser` e `urlencodedParser` já aplicados, então registrá-los aqui,
+   * antes do `init()`, substitui o padrão em vez de somar a ele. A API só fala
+   * JSON, mas o `urlencoded` continua registrado: removê-lo mudaria o
+   * comportamento (um formulário passaria a chegar como corpo vazio, e a
+   * resposta seria um 400 de validação em vez de um corpo interpretado). Fica
+   * com o mesmo teto, para que nenhum dos dois herde um valor que ninguém
+   * escolheu.
+   */
+  app.useBodyParser('json', { limit: REQUEST_BODY_LIMIT_BYTES });
+  app.useBodyParser('urlencoded', { limit: REQUEST_BODY_LIMIT_BYTES, extended: true });
 
   /**
    * A versão vive no prefixo (`/api/v1`), e não no `enableVersioning` do Nest.
