@@ -10,6 +10,10 @@ aberto.
 
 Todos os números abaixo vêm de execução real, não de estimativa.
 
+> Esta tabela é o retrato do **fechamento da implementação** (commit `10be336`). O estado
+> atual, depois da estabilização, está na §16.11: a contagem de testes mudou e a auditoria
+> de dependências passou por avisos novos e foi zerada de novo (§16.11.4).
+
 | Verificação                     | Resultado                              |
 | ------------------------------- | -------------------------------------- |
 | `npm run lint` (back + front)   | sem erro                               |
@@ -460,16 +464,19 @@ encerrada enquanto isso for verdade.
 
 ## 16.8 Outras pendências
 
-**Converter os `NotFoundException('...')` dos services em erros de domínio.** Hoje a
-mensagem em português chega ao cliente porque o filtro mantém mensagem que não casa com os
-padrões de framework. É uma lista de exclusão, e a próxima mensagem de framework não
-estará nela. Com todo erro próprio sendo `DomainError`, a regra se inverte: só mensagem
-declarada pelo projeto é usada, e o resto cai no texto padrão do status.
+**Resolvidas na estabilização (§16.11):**
 
-**Limite de corpo explícito.** O 413 hoje vem do padrão do Express (100 kB). O valor
-deveria ser decisão declarada no `configureApp`, não herança silenciosa.
+- ~~Converter os `NotFoundException('...')` dos services em erros de domínio.~~ Feito:
+  quatro classes em `common/errors/not-found.errors.ts`, mesmo status, `code` e mensagem.
+  A lista de exclusão do filtro **continua existindo**, por um motivo que esta pendência
+  não previa: `common/utils/pagination.ts` ainda lança `BadRequestException` com mensagem
+  do projeto. Inverter a regra para "só mensagem de `DomainError`" exigiria converter esse
+  caso também, e fica para quando houver outro motivo para mexer nele.
+- ~~Limite de corpo explícito.~~ Feito: 16 KiB, declarado em `configureApp`.
 
 **`GET /products/:id/movements`** — Fase 5, com o módulo de movimentação.
+
+**Auditoria de dependências:** tratada na §16.11.4.
 
 ---
 
@@ -516,3 +523,269 @@ Nenhum teste foi desativado, nenhuma regra de lint foi suprimida e nenhuma valid
 enfraquecida para obter resultado verde. Os cinco defeitos da §16.4 foram corrigidos no
 código, não nos testes; nos três casos em que a premissa do teste estava errada, o teste
 foi corrigido e o motivo está no comentário dele.
+
+---
+
+## 16.11 Estabilização pós-CI
+
+Etapa feita depois de o CI (GitHub Actions, Linux) concluir com sucesso no commit
+`10be336`. O resultado do CI foi **confirmado pelo responsável do projeto**; esta sessão
+não tem acesso aos jobs do Actions e não o verificou por conta própria.
+
+**O CI verde no Linux não prova que o defeito da §16.7 desapareceu.** O abort é
+intermitente, e aparece (ou não) conforme a combinação de runtime e sistema. Um resultado
+verde em outra plataforma é compatível com a hipótese de que o problema é específico do
+Node 24.15.0 neste Windows, mas não a confirma. A pendência continua aberta nos termos da
+§16.7.
+
+### 16.11.1 O que mudou
+
+| Item  | Antes                                                       | Depois                                                                                                        |
+| ----- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| 404   | `NotFoundException('...')` lançada pelos services           | `CategoryNotFoundError`, `ProductNotFoundError`, `SupplierNotFoundError`, `UserNotFoundError` (`DomainError`) |
+| Corpo | limite de 100 KiB herdado do padrão do Express, sem escolha | `REQUEST_BODY_LIMIT_BYTES` = 16 KiB, declarado em `configureApp`                                              |
+
+**O contrato público não mudou** para os 404: mesmo status (404), mesmo `code`
+(`NOT_FOUND`), mesma mensagem em português, mesmas chaves na resposta (sem `details`). Para
+o corpo, o 413 e o `code` `PAYLOAD_TOO_LARGE` já existiam; o que mudou é o valor do teto,
+de 100 KiB para 16 KiB, agora documentado em `docs/05-api.md` §5.1.
+
+### 16.11.2 Decisões técnicas
+
+**Uma classe por recurso, em vez de uma classe com o nome como parâmetro.** A mensagem
+fica fixa e revisável num só arquivo, e o teste pode apontar para o erro exato. A base
+`ResourceNotFoundError` carrega `code` e status, então uma quinta classe (Fase 5) é uma
+linha. Sem `details`, de propósito: a resposta atual não os trazia e o id já está na URL.
+
+**16 KiB, e não outro número.** Todo endpoint de escrita recebe um único recurso, nunca
+lista, e cada campo de texto tem `MaxLength`. O maior corpo legítimo é o de produto, com
+cerca de 1,5 mil caracteres; no pior caso de codificação (todo caractere escapado como
+`\uXXXX`, 6 bytes) isso dá cerca de 9 KiB. O teto fica ~1,8x acima. O padrão de 100 KiB é
+~11x o pior caso real, e o corpo é lido **antes** dos guards, então o custo vale também
+para a rota pública de login. O cálculo está no comentário da constante.
+
+**Quando o limite precisar subir.** Se aparecer endpoint legitimamente maior (importação
+em lote), o caminho é um parser com limite próprio naquela rota, e não aumentar o teto
+global.
+
+**`urlencoded` continua registrado, com o mesmo teto.** A API só fala JSON, mas remover o
+parser mudaria o comportamento (um formulário passaria a chegar como corpo vazio). Mantê-lo
+com o padrão deixaria uma segunda herança silenciosa do mesmo valor que se queria declarar.
+
+**O registro é por `app.useBodyParser`, antes do `init()`.** O Nest só instala os parsers
+dele quando não encontra `jsonParser` e `urlencodedParser` já aplicados, então os nossos
+substituem o padrão em vez de se somarem a ele. Ficou em `configureApp`, e portanto vale
+idêntico em produção e nos testes.
+
+**A lista de exclusão do filtro foi mantida.** Ver §16.8: o `BadRequestException` de
+`pagination.ts` ainda depende dela. O comentário do filtro foi atualizado para refletir o
+estado real, em vez de apontar uma pendência que não existe mais.
+
+### 16.11.3 Testes
+
+| Suíte                | Antes (§16.1) | Depois | Novos |
+| -------------------- | ------------- | ------ | ----- |
+| Unitários (backend)  | 128           | 147    | 19    |
+| Integração (backend) | 254           | 293    | 39    |
+
+Novos de integração:
+
+- `test/not-found.int-spec.ts` (20): 14 rotas por id inexistente, em quatro recursos
+  (`GET`, `PATCH`, `PATCH .../status`, `.../role`, `GET .../products`), cada uma verificando
+  o contrato inteiro da resposta; mais ausência de 5xx e igualdade de resposta entre
+  consulta e alteração.
+- `test/security.int-spec.ts` (19): fronteira do limite byte a byte (exatamente 16 KiB
+  passa o parser e cai na validação; 16 KiB + 1 é 413), forma do 413, limite antes da
+  autenticação (login público e rota protegida sem token), `urlencoded`, e 12 formas de
+  corpo ilegível, todas 4xx no contrato único: JSON truncado, vírgula sobrando, aspas
+  simples, texto solto, string/número/`null` no topo, corpo vazio, array no lugar de
+  objeto, charset fora de `utf-*` (415), `Content-Encoding` desconhecido (415) e
+  `Content-Type` de texto.
+
+Novos unitários: classes de erro (12), mapeamento no filtro (5), e o ramo de
+`UsersService.changeOwnPassword` que não é alcançável por HTTP, porque a estratégia JWT
+recusa o token de usuário apagado com 401 antes (2).
+
+**Os testes têm dentes.** Removendo temporariamente o limite explícito, cinco casos passam
+a falhar (os que fixam a fronteira, o 413 e o limite pré-autenticação). O caso antigo de
+2 MB **não** falharia: passa com qualquer valor razoável, e por isso não prova que o
+limite foi declarado.
+
+**Três premissas minhas estavam erradas e foram corrigidas no teste, não no código:** a
+regex que proibia `limit` casava com "limite", do texto do projeto; `charset=utf-7` é
+aceito pelo `body-parser` (só recusa o que não começa com `utf-`), então o caso de charset
+não suportado passou a usar `iso-8859-1`; e uma asserção sobre `'details' in erro` supunha
+ausência de propriedade, quando a classe-base a declara com `undefined`. O que importa é a
+chave não chegar à resposta, e isso é verificado no filtro e na integração.
+
+### 16.11.4 Auditoria de dependências
+
+Os avisos do `npm audit` eram novos em relação ao fechamento da implementação (a §16.1
+dizia zero e já não valia). Foram tratados nesta etapa, sem `--force` e sem rebaixar
+nenhum major.
+
+**Versões, antes e depois**
+
+| Pacote        | Antes | Depois | Como                                            | Advisory                             |
+| ------------- | ----- | ------ | ----------------------------------------------- | ------------------------------------ |
+| `body-parser` | 2.3.0 | 2.4.0  | `npm audit fix` (transitiva de `express` 5.2.1) | GHSA-27r3-jxmh-p828, alta            |
+| `fast-uri`    | 3.1.8 | 3.1.9  | `npm audit fix`, no backend **e** na raiz       | quatro avisos, moderada              |
+| `multer`      | 2.4.0 | 2.5.0  | `overrides` no `backend/package.json`           | GHSA-q7qp-rjg7-q26m, alta (CVSS 7.5) |
+
+`express` (5.2.1), `@nestjs/*` (12.1.3), `typescript` e as demais dependências aprovadas
+**não mudaram**. Os lockfiles têm três versões alteradas (mais as faixas declaradas de
+`content-type`, `iconv-lite` e `qs` dentro do `body-parser`, que já estavam satisfeitas),
+todas resolvidas no registro oficial do npm, todas no mesmo major.
+
+**Resultado do `npm audit`**
+
+| Local                  | Antes                   | Depois |
+| ---------------------- | ----------------------- | ------ |
+| raiz                   | 1 moderada              | 0      |
+| backend (completo)     | 6 (1 moderada, 5 altas) | 0      |
+| backend (`--omit=dev`) | 5 (1 moderada, 4 altas) | 0      |
+| frontend               | 0                       | 0      |
+
+**`body-parser` e `fast-uri`.** Correção direta, compatível, aplicada pelo `npm audit fix`.
+O limite de 16 KiB (§16.11.2) não substituía isso: o aviso é de bytes sobrando depois de
+um corpo comprimido, e a aplicação aceita corpo comprimido porque o Express infla por
+padrão. A versão 2.4.0 corrige a causa.
+
+**`multer`: investigação.**
+
+- Cadeia: `@nestjs/core` e `@nestjs/testing` → `@nestjs/platform-express` → `multer`.
+- O advisory vale para `multer >= 2.0.0, < 2.5.0` e só é explorável com **`fileFilter`
+  assíncrono**: um aborto da requisição enquanto o filtro de outro arquivo ainda está
+  pendente derruba o processo.
+- **Não existe correção por atualização do Nest.** O `@nestjs/platform-express` 12.2.0,
+  a versão mais recente da linha 12, ainda fixa `multer` exatamente em 2.4.0, como a
+  12.1.3 instalada. A única saída do `npm audit fix --force` era instalar a 11.1.1, um
+  rebaixamento de major, recusado.
+- A correção adotada é um `overrides` de `multer` para 2.5.0, um bump de minor dentro do
+  major 2, que é a versão corrigida publicada pelo próprio advisory.
+- **Exposição real do StockFlow, antes da correção:** nenhuma que se consiga demonstrar.
+  Não há `FileInterceptor`, `FilesInterceptor`, `fileFilter`, `multipart` nem upload em
+  `src/` ou `test/`, e o teste de contrato não menciona `multipart`.
+  O `multer` só é carregado quando um desses interceptors é usado. Isso é ausência de
+  uso, e não prova de impossibilidade: a conclusão vale para o código atual.
+- **Limitação que permanece.** O `override` é uma divergência declarada do que o Nest
+  fixa. Ela é segura enquanto o `multer` 2.5.0 for compatível com a API que o Nest usa,
+  e nada nele é exercitado por este projeto. Quando o Nest publicar uma versão que fixe
+  `multer >= 2.5.0`, o `override` deve ser **removido**, para não esconder um
+  descompasso futuro. O CI não tem passo de `npm audit`, então um aviso novo continuará
+  sem derrubá-lo.
+
+**Compatibilidade verificada.** Node 24.15.0, NestJS 12.1.3 e Express 5.2.1 inalterados;
+`body-parser` 2.4.0 declara `node >= 18`; typecheck, lint, build, 147 testes unitários e
+os 293 de integração rodam nas versões novas (a suíte de integração inclui os testes do
+limite de corpo, que exercitam o `body-parser` diretamente).
+
+### 16.11.5 Verificações executadas
+
+| Verificação                       | Resultado                                                                                                                                                                       |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run lint` (raiz: back+front) | sem erro                                                                                                                                                                        |
+| `npm run typecheck` (raiz)        | sem erro                                                                                                                                                                        |
+| `npx prettier --check .`          | todos os arquivos conformes                                                                                                                                                     |
+| Testes unitários (backend)        | 147 passando, 11 arquivos                                                                                                                                                       |
+| `npm run build` (backend)         | sem erro                                                                                                                                                                        |
+| `npm audit` (raiz, back, front)   | 0 vulnerabilidades nos três                                                                                                                                                     |
+| Verificação de segredos           | limpa: só `.env.example` versionado, `.env` ignorado, nenhum padrão de token no diff, nos lockfiles ou em todo o histórico; todo `resolved` novo aponta para o registro oficial |
+| Testes de integração (backend)    | 293 passando **quando o processo não aborta**; ver abaixo                                                                                                                       |
+
+A suíte de integração rodou contra PostgreSQL 17 real (container `stockflow-db`), em Node
+24.15.0 no Windows, a mesma combinação da §16.7. A primeira execução (código desta etapa,
+antes da correção dos testes novos) teve 2 falhas, ambas em premissas dos testes descritas
+na §16.11.3.
+
+### 16.11.6 O abort do Node 24 no Windows, medido de novo
+
+**Continua acontecendo, e não foi mascarado.** Todas as ocorrências têm a mesma
+assinatura da §16.7: o worker sai com código `3221226505` (`0xC0000409`) no meio de um
+arquivo de integração, o Vitest registra `Unhandled Error`, e o rodapé mostra `Errors`.
+Nenhuma execução foi repetida para obter verde: cada uma está contada abaixo.
+
+| Conjunto                                  | Execuções | Com abort | Taxa |
+| ----------------------------------------- | --------- | --------- | ---- |
+| Medição original (§16.7), 254 casos       | 20        | 2         | 10%  |
+| Esta etapa, dependências **antigas**, 293 | 17        | 6         | 35%  |
+| Esta etapa, dependências **novas**, 293   | 17        | 5         | 29%  |
+
+(O conjunto "antigas" é o controle: o mesmo código, com os lockfiles revertidos e
+`npm ci`, e depois restaurados e conferidos. Mais duas execuções iniciais, antes do
+`npm audit fix`, passaram limpas e não entram na tabela.)
+
+O que isso permite afirmar:
+
+- **A atualização de dependências não causou nem agravou o abort.** Com as versões
+  antigas a taxa foi igual ou maior. Com 17 execuções por lado a diferença entre 35% e 29%
+  não é distinguível de ruído, e a conclusão é só "sem efeito detectável".
+- **A taxa desta etapa é maior que a da §16.7, e não sei explicar por quê.** As
+  diferenças são o tamanho da suíte (293 casos, e 39 deles com requisições a mais), a
+  carga da máquina no momento e o acaso, com amostras pequenas. **Não está estabelecido**
+  que a suíte maior piora o defeito, nem que ele piorou por outra causa.
+- O arquivo abortado varia (`users`, `rbac`, `not-found`, entre outros), coerente com a
+  hipótese da §16.7 de uma falha na camada de sockets do runtime, e não de um teste ou de
+  uma dependência específica.
+
+A pendência permanece **aberta e não resolvida**. O próximo passo continua sendo o
+descrito na §16.7: o script mínimo em outra linha do Node.
+
+### 16.11.7 Pendências restantes
+
+1. **Abort intermitente do Node 24 no Windows** (§16.7, §16.11.6). Aberta, **não
+   resolvida**, sem retry nem teste desativado. O CI verde no Linux não a fecha.
+2. **`override` do `multer`** (§16.11.4): remover quando o Nest fixar `multer >= 2.5.0`.
+3. **O CI não audita dependências.** Sugerido como passo do pipeline; não foi feito.
+4. **Lista de exclusão do filtro** (§16.8): resíduo, ligado ao `BadRequestException` de
+   `pagination.ts`.
+5. **`GET /products/:id/movements`**: Fase 5.
+
+### 16.11.8 Arquivos alterados nesta etapa
+
+Código: `src/bootstrap.ts`, `src/common/errors/not-found.errors.ts` (novo),
+`src/common/filters/all-exceptions.filter.ts` (comentário), e os quatro services
+(`categories`, `products`, `suppliers`, `users`).
+
+Testes: `src/common/errors/not-found.errors.spec.ts` (novo),
+`src/common/filters/all-exceptions.filter.spec.ts`, `src/users/users.service.spec.ts`
+(novo), `test/not-found.int-spec.ts` (novo), `test/security.int-spec.ts`.
+
+Dependências: `backend/package.json` (`overrides`), `backend/package-lock.json` e
+`package-lock.json`.
+
+Documentação: este relatório, `docs/05-api.md` §5.1 e `docs/09-roadmap.md`.
+
+Nenhuma alteração no frontend, nenhuma migration.
+
+### 16.11.9 Verificação final antes de versionar
+
+Feita sobre instalação limpa (`node_modules` removidos e `npm ci` na raiz e no backend):
+
+- `npm ls multer` mostra `multer@2.5.0 overridden`, com `body-parser@2.4.0` e
+  `fast-uri@3.1.9` na raiz e no backend. Lockfiles e árvore instalada sincronizados, sem
+  item inválido ou ausente.
+- `npm audit` (raiz, backend, frontend): 0 vulnerabilidades.
+- Lint e typecheck (raiz), prettier e build do backend: sem erro.
+- 147 unitários do backend e 105 do frontend (intocado) passando; 293 de integração
+  passando nesta execução. Uma execução limpa **não** altera o que a §16.11.6 mediu.
+- Diff revisado: sem segredo, sem arquivo temporário, sem `.only`, `.skip` ou depuração.
+
+---
+
+## 16.12 Encerramento da Fase 4
+
+**A Fase 4 é encerrada com ressalva**, por decisão do responsável do projeto. O que isso
+significa, sem arredondar:
+
+- **Entregue e verificado:** autenticação, RBAC, cadastros, auditoria, erros padronizados,
+  404 como erro de domínio, limite explícito de corpo (16 KiB), dependências sem aviso
+  conhecido e CI em Linux concluído com sucesso no commit `10be336` (confirmado pelo
+  responsável). O CI das alterações desta etapa só é dado como aprovado depois de
+  verificado.
+- **Ressalva aceita, não resolvida:** o abort intermitente do Node 24.15.0 no Windows
+  (§16.7). O critério "suíte determinística" da §16.10 **continua não atendido** no
+  ambiente local. A taxa foi medida entre 10% e 35% das execuções, a causa não foi
+  estabelecida e o teste decisivo (outra linha do Node) não foi feito. O CI verde em
+  Linux é compatível com uma causa específica do ambiente, mas não a comprova.
+- **Pendências que seguem adiante:** as da §16.11.7.

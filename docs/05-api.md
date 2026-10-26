@@ -44,7 +44,7 @@ seria superfície de ataque e de erro.
 | 404    | Recurso inexistente                                                 |
 | 409    | Conflito de estado de negócio (SKU duplicado, estoque insuficiente) |
 | 422    | Entrada válida em forma, mas inválida em regra de negócio           |
-| 413    | Corpo da requisição acima do limite aceito                          |
+| 413    | Corpo da requisição acima de 16 KiB (JSON ou formulário)            |
 | 429    | Rate limit excedido                                                 |
 | 500    | Erro inesperado (sem vazar detalhe interno)                         |
 

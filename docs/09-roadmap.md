@@ -66,15 +66,18 @@ tela de demonstração; layout correto em 375px, 768px e 1440px; nenhum dado fal
 
 ---
 
-## Fase 4 — Backend: auth e cadastros ⏳
+## Fase 4 — Backend: auth e cadastros ✅ (com ressalva)
 
-Implementada e verificada; aguardando commit. Relatório em
+Encerrada com ressalva documentada: o abort intermitente do Node 24 no Windows segue como
+pendência técnica conhecida e **não resolvida** (§16.7 e §16.11.6 do relatório). O CI em
+Linux concluiu com sucesso, o que não a fecha. Relatório em
 [docs/16-relatorio-fase-4.md](16-relatorio-fase-4.md), com os números medidos, os cinco
-defeitos que os testes encontraram e a pendência aberta da §16.7 (instabilidade do worker
-do Vitest, 1 execução em 8).
+defeitos que os testes encontraram e a instabilidade do worker do Vitest, medida entre 10%
+e 35% das execuções conforme o conjunto.
 
 Entregue: 31 rotas (as 32 documentadas do §5 menos `GET /products/:id/movements`, adiada
-para a Fase 5), 128 testes unitários e 254 de integração contra PostgreSQL real.
+para a Fase 5), 147 testes unitários e 293 de integração contra PostgreSQL real, após a
+estabilização da §16.11.
 
 - Módulo `auth`: login, refresh rotativo, logout, `/me`; Argon2id; `RefreshToken`
 - `JwtAuthGuard` + `RolesGuard` globais; `@Public()`, `@Roles()`, `@CurrentUser()`
