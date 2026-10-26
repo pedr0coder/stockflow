@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import { v7 as uuidv7 } from 'uuid';
+import { Prisma } from '../generated/prisma/client';
 import { toAuditSnapshot } from '../common/utils/redact';
 import { PrismaService } from '../prisma/prisma.service';
 import { currentAuditContext } from './audit-context';
@@ -34,6 +35,9 @@ export const AuditAction = {
   PRODUCT_CREATED: 'PRODUCT_CREATED',
   PRODUCT_UPDATED: 'PRODUCT_UPDATED',
   PRODUCT_STATUS_CHANGED: 'PRODUCT_STATUS_CHANGED',
+
+  // Fase 5, marco 5A.
+  STOCK_MOVEMENT_CREATED: 'STOCK_MOVEMENT_CREATED',
 } as const;
 
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
@@ -67,40 +71,74 @@ export class AuditService {
    * por um problema de registro. A falha vai para o log da aplicação, onde
    * aparece no monitoramento.
    *
-   * O estado anterior e posterior passam pela função de redação antes de
-   * chegar ao banco. Senha, hash, token e segredo nunca entram aqui
-   * (docs/04-banco-de-dados.md §4.4), e isso é garantido em um ponto só.
+   * Usado pelos cadastros (Fase 4). **Comportamento inalterado** pela Fase 5:
+   * continua fora de transação e continua engolindo a falha
+   * (docs/17-plano-fase-5.md §17.7.3, decisão D3).
    */
   async record(input: RecordAuditInput): Promise<void> {
-    const context = currentAuditContext();
-
-    const actorId = input.actorId ?? context.actorId;
-    const actorEmail = input.actorEmail ?? context.actorEmail;
-
     try {
-      await this.prisma.auditLog.create({
-        data: {
-          id: uuidv7(),
-          action: input.action,
-          ...(actorId !== undefined ? { userId: actorId } : {}),
-          ...(actorEmail !== undefined ? { actorEmail } : {}),
-          ...(input.entity !== undefined ? { entity: input.entity } : {}),
-          ...(input.entityId !== undefined ? { entityId: input.entityId } : {}),
-          ...(toAuditSnapshot(input.before) !== undefined
-            ? { before: toAuditSnapshot(input.before) as object }
-            : {}),
-          ...(toAuditSnapshot(input.after) !== undefined
-            ? { after: toAuditSnapshot(input.after) as object }
-            : {}),
-          ...(context.ip !== undefined ? { ip: context.ip } : {}),
-          ...(context.userAgent !== undefined ? { userAgent: context.userAgent } : {}),
-        },
-      });
+      await this.prisma.auditLog.create({ data: this.buildAuditData(input) });
     } catch (error) {
       this.logger.error(
         { err: error, action: input.action, entity: input.entity },
         'falha ao gravar registro de auditoria',
       );
     }
+  }
+
+  /**
+   * Registra uma ação **dentro** da transação de negócio, e participa dela.
+   *
+   * Ao contrário de `record()`, **esta função PROPAGA a falha**: se o
+   * `INSERT` do log falhar, a exceção sobe e desfaz também o saldo e o
+   * movimento que a mesma transação gravou. É a troca deliberada de
+   * disponibilidade por integridade das operações de estoque
+   * (docs/17-plano-fase-5.md §17.7.3, decisão D3) — e vale só para quem chama
+   * este método, nunca para `record()`, que os cadastros da Fase 4 continuam
+   * usando sem mudança de comportamento.
+   *
+   * Exige autor explícito (no `input` ou no contexto da requisição). Uma
+   * operação crítica de estoque sem responsável é erro de ligação do código,
+   * não um registro anônimo — por isso lança, em vez de gravar sem autor.
+   */
+  async recordInTransaction(tx: Prisma.TransactionClient, input: RecordAuditInput): Promise<void> {
+    const data = this.buildAuditData(input);
+
+    if (data.userId === undefined) {
+      throw new Error(
+        `recordInTransaction: autor obrigatório, ausente para a ação ${input.action}.`,
+      );
+    }
+
+    await tx.auditLog.create({ data });
+  }
+
+  /**
+   * Monta o registro a partir do input e do contexto da requisição.
+   *
+   * **Único** ponto que chama `toAuditSnapshot` (a redação): os dois métodos
+   * acima o usam, então a redação de campo sensível não pode divergir entre
+   * o caminho transacional e o não transacional.
+   */
+  private buildAuditData(input: RecordAuditInput) {
+    const context = currentAuditContext();
+
+    const actorId = input.actorId ?? context.actorId;
+    const actorEmail = input.actorEmail ?? context.actorEmail;
+    const before = toAuditSnapshot(input.before);
+    const after = toAuditSnapshot(input.after);
+
+    return {
+      id: uuidv7(),
+      action: input.action,
+      ...(actorId !== undefined ? { userId: actorId } : {}),
+      ...(actorEmail !== undefined ? { actorEmail } : {}),
+      ...(input.entity !== undefined ? { entity: input.entity } : {}),
+      ...(input.entityId !== undefined ? { entityId: input.entityId } : {}),
+      ...(before !== undefined ? { before: before as object } : {}),
+      ...(after !== undefined ? { after: after as object } : {}),
+      ...(context.ip !== undefined ? { ip: context.ip } : {}),
+      ...(context.userAgent !== undefined ? { userAgent: context.userAgent } : {}),
+    };
   }
 }
