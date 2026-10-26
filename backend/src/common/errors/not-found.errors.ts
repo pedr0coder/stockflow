@@ -49,3 +49,9 @@ export class UserNotFoundError extends ResourceNotFoundError {
     super('Usuário não encontrado.');
   }
 }
+
+export class StockMovementNotFoundError extends ResourceNotFoundError {
+  constructor() {
+    super('Movimentação não encontrada.');
+  }
+}

@@ -107,5 +107,46 @@ export default tseslint.config(
     extends: [tseslint.configs.disableTypeChecked],
   },
 
+  {
+    /**
+     * Nenhum valor de estoque passa por ponto flutuante (docs/17-plano-fase-5.md
+     * §17.5.9). `number` em JavaScript é IEEE-754 e perde precisão em
+     * quantidade — o mesmo motivo de o banco usar `Decimal`. A regra cobre o
+     * caminho de quantidade e o SQL cru da movimentação: `Number()`,
+     * `parseFloat`, `Math.*` e `.toNumber()` em qualquer um desses arquivos é
+     * erro de lint, não de revisão humana. Onde uma comparação sem aritmética é
+     * de fato necessária (ex.: achar o dígito não-zero de uma string), o código
+     * usa regex, não conversão numérica.
+     */
+    files: ['src/stock-movements/**/*.ts', 'src/common/utils/quantity.ts'],
+    ignores: ['**/*.spec.ts', '**/*.int-spec.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "CallExpression[callee.name='Number']",
+          message: 'Quantidade de estoque não passa por Number(). Use Prisma.Decimal ou string.',
+        },
+        {
+          selector: "CallExpression[callee.name='parseFloat']",
+          message:
+            'Quantidade de estoque não passa por parseFloat(). Use Prisma.Decimal ou string.',
+        },
+        {
+          selector: "CallExpression[callee.name='parseInt']",
+          message: 'Quantidade de estoque não passa por parseInt(). Use Prisma.Decimal ou string.',
+        },
+        {
+          selector: "CallExpression[callee.object.name='Math']",
+          message: 'Quantidade de estoque não passa por Math.*. Use os métodos de Prisma.Decimal.',
+        },
+        {
+          selector: "CallExpression[callee.property.name='toNumber']",
+          message: '.toNumber() perde precisão. A quantidade sai como Decimal ou string.',
+        },
+      ],
+    },
+  },
+
   prettier,
 );
