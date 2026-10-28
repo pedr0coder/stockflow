@@ -43,3 +43,9 @@ export const PG_NUMERIC_OVERFLOW = '22003';
 
 /** `stock_movements_immutable`: tentativa de `UPDATE`/`DELETE` no histórico. */
 export const PG_STOCK_MOVEMENT_IMMUTABLE = 'SF001';
+
+/** `inventories_forbid_reopen`: tentativa de saída de um estado final (marco 5B). */
+export const PG_INVENTORY_TERMINAL = 'SF002';
+
+/** Violação de índice único (`23505`), inclusive o parcial da D17. */
+export const PG_UNIQUE_VIOLATION = '23505';

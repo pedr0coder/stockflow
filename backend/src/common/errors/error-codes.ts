@@ -41,6 +41,10 @@ export const ErrorCode = {
   INVALID_TYPE_REASON: 'INVALID_TYPE_REASON',
   INVENTORY_NOT_OPEN: 'INVENTORY_NOT_OPEN',
   INVENTORY_ALREADY_APPROVED: 'INVENTORY_ALREADY_APPROVED',
+  /** Transição de estado recusada fora de "não está aberto" e "já aprovado" (D5). */
+  INVENTORY_INVALID_STATE: 'INVENTORY_INVALID_STATE',
+  /** Produto selecionado para um inventário já retido por outro, não finalizado (D5, D17). */
+  PRODUCT_IN_OPEN_INVENTORY: 'PRODUCT_IN_OPEN_INVENTORY',
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

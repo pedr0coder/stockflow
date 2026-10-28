@@ -55,3 +55,16 @@ export class StockMovementNotFoundError extends ResourceNotFoundError {
     super('Movimentação não encontrada.');
   }
 }
+
+export class InventoryNotFoundError extends ResourceNotFoundError {
+  constructor() {
+    super('Inventário não encontrado.');
+  }
+}
+
+/** Também usado quando o item existe, mas pertence a outro inventário (docs/17 §17.4.3). */
+export class InventoryItemNotFoundError extends ResourceNotFoundError {
+  constructor() {
+    super('Item de inventário não encontrado.');
+  }
+}

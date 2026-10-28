@@ -112,13 +112,18 @@ export default tseslint.config(
      * Nenhum valor de estoque passa por ponto flutuante (docs/17-plano-fase-5.md
      * §17.5.9). `number` em JavaScript é IEEE-754 e perde precisão em
      * quantidade — o mesmo motivo de o banco usar `Decimal`. A regra cobre o
-     * caminho de quantidade e o SQL cru da movimentação: `Number()`,
+     * caminho de quantidade e o SQL cru da movimentação e do inventário (marco
+     * 5B, mesma exigência da D1/D7): `Number()`,
      * `parseFloat`, `Math.*` e `.toNumber()` em qualquer um desses arquivos é
      * erro de lint, não de revisão humana. Onde uma comparação sem aritmética é
      * de fato necessária (ex.: achar o dígito não-zero de uma string), o código
      * usa regex, não conversão numérica.
      */
-    files: ['src/stock-movements/**/*.ts', 'src/common/utils/quantity.ts'],
+    files: [
+      'src/stock-movements/**/*.ts',
+      'src/inventories/**/*.ts',
+      'src/common/utils/quantity.ts',
+    ],
     ignores: ['**/*.spec.ts', '**/*.int-spec.ts'],
     rules: {
       'no-restricted-syntax': [
