@@ -174,6 +174,42 @@ describe('RBAC (integração)', () => {
       // um produto real e é testado à parte, em "matriz nas rotas com id".
       { method: 'get', path: '/api/v1/stock-movements', allow: [...Object.values(UserRole)] },
 
+      // Inventário, dashboard e relatórios de leitura geral (Fase 5, marco
+      // 5B): os três papéis (§17.7.1). Abrir/aprovar/cancelar inventário
+      // (só A/M) e os relatórios restritos (`inventories`, `divergences`,
+      // `stock-reconciliation`) dependem de fixture própria e são testados
+      // em `inventories.int-spec.ts` (D9) e `reports.int-spec.ts`.
+      { method: 'get', path: '/api/v1/inventories', allow: [...Object.values(UserRole)] },
+      { method: 'get', path: '/api/v1/dashboard/summary', allow: [...Object.values(UserRole)] },
+      {
+        method: 'get',
+        path: '/api/v1/dashboard/movements-chart',
+        allow: [...Object.values(UserRole)],
+      },
+      {
+        method: 'get',
+        path: '/api/v1/dashboard/recent-movements',
+        allow: [...Object.values(UserRole)],
+      },
+      { method: 'get', path: '/api/v1/reports/low-stock', allow: [...Object.values(UserRole)] },
+      { method: 'get', path: '/api/v1/reports/out-of-stock', allow: [...Object.values(UserRole)] },
+      { method: 'get', path: '/api/v1/reports/movements', allow: [...Object.values(UserRole)] },
+
+      // Relatórios restritos a A/M (§17.7.1).
+      {
+        method: 'get',
+        path: '/api/v1/reports/inventories',
+        allow: [UserRole.ADMIN, UserRole.MANAGER],
+      },
+      {
+        method: 'get',
+        path: '/api/v1/reports/divergences',
+        allow: [UserRole.ADMIN, UserRole.MANAGER],
+      },
+
+      // Reconciliação: só ADMIN (§17.7.1).
+      { method: 'get', path: '/api/v1/reports/stock-reconciliation', allow: [UserRole.ADMIN] },
+
       // Auditoria global: só ADMIN.
       { method: 'get', path: '/api/v1/audit', allow: [UserRole.ADMIN] },
     ];

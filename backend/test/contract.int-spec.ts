@@ -8,13 +8,11 @@ import { createTestApp, type TestApp } from './helpers/app';
  * ┌──────────────────────────────────────────────────────────────────────────┐
  * │ A SUPERFÍCIE DE ROTAS, FIXADA CONTRA O CONTRATO.                         │
  * │                                                                          │
- * │ A Fase 4 fechou com 31 rotas (32 documentadas menos                      │
- * │ `GET /products/:id/movements`, adiada por decisão registrada em          │
- * │ docs/15-plano-fase-4.md §15.3). O marco 5A da Fase 5 soma as 6 rotas de  │
- * │ `/stock-movements` e a retomada de `/products/:id/movements             │
- * │ (docs/17-plano-fase-5.md §17.2):                                         │
- * │                                                                          │
- * │   31 da Fase 4 + 6 do marco 5A = 37                                      │
+ * │ A Fase 4 fechou com 31 rotas. O marco 5A somou as 6 rotas de             │
+ * │ `/stock-movements` e a retomada de `GET /products/:id/movements`:        │
+ * │ 31 + 6 = 37. O marco 5B soma as 16 rotas de `/inventories` (7),          │
+ * │ `/dashboard` (3) e `/reports` (6): 37 + 16 = 53                          │
+ * │ (docs/17-plano-fase-5.md §17.2, §17.4).                                  │
  * │                                                                          │
  * │ A lista abaixo é essa conta, escrita por extenso. Um teste que só        │
  * │ contasse rotas passaria com a rota errada implementada; este compara     │
@@ -68,6 +66,28 @@ const ROTAS_ESPERADAS: readonly string[] = [
   'POST /api/v1/stock-movements/out',
   'POST /api/v1/stock-movements/adjustment',
 
+  // §5.8 Inventários (Fase 5, marco 5B)
+  'GET /api/v1/inventories',
+  'GET /api/v1/inventories/{id}',
+  'POST /api/v1/inventories',
+  'PATCH /api/v1/inventories/{id}/items/{itemId}/count',
+  'POST /api/v1/inventories/{id}/submit',
+  'POST /api/v1/inventories/{id}/approve',
+  'POST /api/v1/inventories/{id}/cancel',
+
+  // §5.9 Dashboard (Fase 5, marco 5B)
+  'GET /api/v1/dashboard/summary',
+  'GET /api/v1/dashboard/movements-chart',
+  'GET /api/v1/dashboard/recent-movements',
+
+  // §5.10 Relatórios (Fase 5, marco 5B)
+  'GET /api/v1/reports/low-stock',
+  'GET /api/v1/reports/out-of-stock',
+  'GET /api/v1/reports/movements',
+  'GET /api/v1/reports/inventories',
+  'GET /api/v1/reports/divergences',
+  'GET /api/v1/reports/stock-reconciliation',
+
   // §5.11 Auditoria
   'GET /api/v1/audit',
   'GET /api/v1/audit/{entity}/{entityId}',
@@ -75,15 +95,6 @@ const ROTAS_ESPERADAS: readonly string[] = [
   // §5.12 Infraestrutura
   'GET /api/v1/health',
   'GET /api/v1/health/ready',
-];
-
-/** Rotas do marco 5B. Nenhuma delas deve existir ainda. */
-const ROTAS_DE_FASES_FUTURAS: readonly [string, string][] = [
-  ['post', '/api/v1/inventories'],
-  ['get', '/api/v1/inventories'],
-  ['get', '/api/v1/dashboard/summary'],
-  ['get', '/api/v1/reports/low-stock'],
-  ['get', '/api/v1/reports/stock-reconciliation'],
 ];
 
 describe('Contrato da API (integração)', () => {
@@ -108,9 +119,9 @@ describe('Contrato da API (integração)', () => {
     await harness.close();
   });
 
-  it('implementa exatamente 37 rotas (marco 5A)', () => {
+  it('implementa exatamente 53 rotas (marco 5B)', () => {
     expect(rotas).toHaveLength(ROTAS_ESPERADAS.length);
-    expect(ROTAS_ESPERADAS).toHaveLength(37);
+    expect(ROTAS_ESPERADAS).toHaveLength(53);
   });
 
   it('não falta nenhuma rota do contrato', () => {
@@ -131,17 +142,12 @@ describe('Contrato da API (integração)', () => {
     expect(rotas).toContain('GET /api/v1/products/{id}/movements');
   });
 
-  it.each(ROTAS_DE_FASES_FUTURAS)(
-    '%s %s é de fase futura e não responde',
-    async (metodo, caminho) => {
-      const agente = request(app.getHttpServer());
-      const response = await (metodo === 'get' ? agente.get(caminho) : agente.post(caminho)).send(
-        {},
-      );
-
-      expect(response.status).toBe(404);
-    },
-  );
+  it('as 16 rotas do marco 5B existem (inventários, dashboard, relatórios)', () => {
+    expect(rotas).toContain('POST /api/v1/inventories');
+    expect(rotas).toContain('POST /api/v1/inventories/{id}/approve');
+    expect(rotas).toContain('GET /api/v1/dashboard/summary');
+    expect(rotas).toContain('GET /api/v1/reports/stock-reconciliation');
+  });
 
   describe('forma do documento OpenAPI', () => {
     it('declara o esquema de autenticação por bearer', () => {
