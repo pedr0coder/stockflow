@@ -312,15 +312,33 @@ model InventoryItem {
   productId String  @map("product_id") @db.Uuid
   product   Product @relation(fields: [productId], references: [id], onDelete: Restrict)
 
-  /// Congelado no momento da contagem, não na abertura do inventário: a
-  /// divergência compara a contagem física com o que o sistema dizia NAQUELE
-  /// instante, que é a pergunta real do inventário.
-  expectedQty Decimal   @map("expected_qty") @db.Decimal(14, 3)
+  /// Congelado no momento da CONTAGEM, não na abertura do inventário (marco
+  /// 5B): a divergência compara a contagem física com o que o sistema dizia
+  /// NAQUELE instante, que é a pergunta real do inventário. `null` até o item
+  /// ser contado — nasce `null` na abertura, nunca na criação do item
+  /// (docs/17-plano-fase-5.md §17.8.3, a normalização da migration 5B).
+  expectedQty Decimal?  @map("expected_qty") @db.Decimal(14, 3)
   /// null = ainda não contado. Item não contado não entra no cálculo.
   countedQty  Decimal?  @map("counted_qty") @db.Decimal(14, 3)
   countedAt   DateTime? @map("counted_at") @db.Timestamptz(6)
   countedById String?   @map("counted_by_id") @db.Uuid
   countedBy   User?     @relation(fields: [countedById], references: [id], onDelete: SetNull)
+
+  /// D17 (A-mín): `true` enquanto o inventário do item não foi finalizado.
+  /// Nasce `true` no INSERT, então todo item criado já está sob a garantia do
+  /// índice único parcial abaixo — sem protocolo de aplicação. Um trigger
+  /// (`SF002`, migration 5B) o vira `false` quando o inventário chega a
+  /// APPROVED ou CANCELLED; nenhum código da aplicação escreve este campo.
+  ///
+  /// O ÍNDICE ÚNICO PARCIAL sobre `(product_id) WHERE in_progress` NÃO está
+  /// declarado aqui (PG-5, docs/17-plano-fase-5.md §17.8.5): declará-lo
+  /// exigiria o preview `partialIndexes` e faria o Prisma expor `productId`
+  /// como chave única do modelo, o que é enganoso (um produto tem várias
+  /// linhas de `InventoryItem` ao longo do tempo). O Prisma 7.10.1 ignora um
+  /// índice parcial não declarado — medido, e coberto pelas guardas PG-2
+  /// (drift zero) e PG-3 (catálogo), que falham o CI antes de o índice ser
+  /// removido por descuido.
+  inProgress Boolean @default(true) @map("in_progress")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)

@@ -51,6 +51,12 @@ interface OrphanAuditRow {
  * 2, conferido aqui pela aplicação). CI3: todo movimento SEM
  * `inventory_item_id` tem exatamente UMA auditoria `STOCK_MOVEMENT_CREATED`,
  * e vice-versa.
+ *
+ * CI4 (marco 5B): todo item com `in_progress = true` pertence a um inventário
+ * NÃO finalizado, e todo item de inventário NÃO finalizado tem
+ * `in_progress = true` — e vice-versa para finalizado/`false`. CI5: todo
+ * inventário `APPROVED` tem exatamente um ajuste (`stock_movements` com
+ * `inventory_item_id`) por item contado e divergente, e nenhum por outro.
  */
 export async function assertStockInvariants(prisma: PrismaService): Promise<void> {
   const violacoes: StockInvariantViolation[] = [];
@@ -122,6 +128,47 @@ export async function assertStockInvariants(prisma: PrismaService): Promise<void
       produto: linha.entity_id,
       motivo: 'CI3: auditoria sem o movimento correspondente',
     });
+  }
+
+  const inProgressDivergente = await prisma.$queryRaw<
+    { id: string; in_progress: boolean; status: string }[]
+  >`
+    SELECT ii.id::text, ii.in_progress, i.status::text
+      FROM inventory_items ii
+      JOIN inventories i ON i.id = ii.inventory_id
+     WHERE ii.in_progress <> (i.status NOT IN ('APPROVED', 'CANCELLED'))
+  `;
+  for (const linha of inProgressDivergente) {
+    violacoes.push({
+      produto: linha.id,
+      motivo: `CI4: in_progress=${String(linha.in_progress)} não combina com o status ${linha.status} do inventário`,
+    });
+  }
+
+  const ajustesFaltandoOuSobrando = await prisma.$queryRaw<{ id: string; motivo: string }[]>`
+    SELECT ii.id::text,
+           CASE
+             WHEN i.status = 'APPROVED' AND ii.counted_qty IS NOT NULL AND ii.counted_qty <> ii.expected_qty
+                  AND NOT EXISTS (SELECT 1 FROM stock_movements sm WHERE sm.inventory_item_id = ii.id)
+               THEN 'CI5: item divergente de inventário aprovado sem ajuste'
+             WHEN (i.status <> 'APPROVED' OR ii.counted_qty IS NULL OR ii.counted_qty = ii.expected_qty)
+                  AND EXISTS (SELECT 1 FROM stock_movements sm WHERE sm.inventory_item_id = ii.id)
+               THEN 'CI5: ajuste existe para item que não deveria ter'
+           END AS motivo
+      FROM inventory_items ii
+      JOIN inventories i ON i.id = ii.inventory_id
+     WHERE CASE
+             WHEN i.status = 'APPROVED' AND ii.counted_qty IS NOT NULL AND ii.counted_qty <> ii.expected_qty
+                  AND NOT EXISTS (SELECT 1 FROM stock_movements sm WHERE sm.inventory_item_id = ii.id)
+               THEN true
+             WHEN (i.status <> 'APPROVED' OR ii.counted_qty IS NULL OR ii.counted_qty = ii.expected_qty)
+                  AND EXISTS (SELECT 1 FROM stock_movements sm WHERE sm.inventory_item_id = ii.id)
+               THEN true
+             ELSE false
+           END
+  `;
+  for (const linha of ajustesFaltandoOuSobrando) {
+    violacoes.push({ produto: linha.id, motivo: linha.motivo });
   }
 
   if (violacoes.length > 0) {
