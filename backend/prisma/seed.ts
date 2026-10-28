@@ -4,30 +4,33 @@
  * Todos os dados aqui são **declaradamente fictícios**. Nenhum nome de empresa
  * real, dado de terceiro ou processo interno de qualquer organização é usado.
  *
- * ─── Limitação desta fase, assumida de propósito ──────────────────────────
+ * ─── Histórico de movimentações (D13, marco 5B) ────────────────────────────
  *
- * O plano (docs/04-banco-de-dados.md §4.7) prevê que o histórico de
- * movimentações do seed seja gerado pelo **mesmo service** que a aplicação usa
- * em produção, para que o seed não consiga produzir um estado que a regra de
- * negócio recusaria. Esse service é da Fase 5 e ainda não existe.
- *
- * Então o seed da Fase 2 cria apenas cadastro, e **todo produto nasce com saldo
- * zero**. A alternativa seria inserir movimentações por INSERT direto, o que
- * daria exatamente o problema que a §4.7 quer evitar: saldo que o histórico não
- * explica, montado por fora da regra. Preferível ter um banco vazio e honesto a
- * um banco populado e inconsistente.
- *
- * O seed é completado na Fase 5.
+ * Completo nesta fase: cada movimento passa pelo `StockMovementsService`
+ * real (nunca `INSERT` direto), então o saldo final é exatamente o que o
+ * histórico explica — a reconciliação (`GET /reports/stock-reconciliation`)
+ * aprova o resultado. `referenceDoc` determinístico (`SEED-<sku>-<n>`):
+ * antes de criar, o seed verifica se aquele `referenceDoc` já existe, e pula
+ * se existir — um seed interrompido no meio se completa na próxima execução
+ * sem duplicar nada. As quantidades vêm de um gerador com semente fixa, para
+ * que o histórico seja o mesmo em qualquer máquina. Nenhum movimento desta
+ * fonte usa `number`/`parseFloat`/`Math.*` sobre o valor que vai para a API —
+ * só para ESCOLHER a quantidade fictícia, nunca para gravá-la (a chamada ao
+ * service sempre recebe uma string decimal).
  */
 import { resolve } from 'node:path';
 import { hash } from '@node-rs/argon2';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { config as loadEnv } from 'dotenv';
+import type { PinoLogger } from 'nestjs-pino';
 import { v7 as uuidv7 } from 'uuid';
 import { ARGON2_OPTIONS } from '../src/auth/auth.service';
 import { MIN_PASSWORD_LENGTH } from '../src/auth/dto/login.dto';
+import { AuditService } from '../src/audit/audit.service';
 import { PrismaClient } from '../src/generated/prisma/client';
-import { UnitOfMeasure, UserRole } from '../src/generated/prisma/enums';
+import { MovementReason, UnitOfMeasure, UserRole } from '../src/generated/prisma/enums';
+import type { PrismaService } from '../src/prisma/prisma.service';
+import { StockMovementsService } from '../src/stock-movements/stock-movements.service';
 
 loadEnv({ path: resolve(process.cwd(), '../.env'), override: false, quiet: true });
 
@@ -512,6 +515,100 @@ function readSeedPassword(envVar: string): string {
   return value;
 }
 
+interface MovementPlan {
+  type: 'IN' | 'OUT';
+  quantity: string;
+  reason: MovementReason;
+  referenceDoc: string;
+}
+
+/**
+ * Gerador determinístico simples (LCG de Lehmer), só para ESCOLHER a
+ * quantidade fictícia de cada movimento do seed — nunca para gravá-la: a
+ * chamada ao service sempre recebe uma string decimal (D13, §4 do plano da
+ * Fase 5). Semente fixa por SKU: o mesmo catálogo produz o mesmo histórico em
+ * qualquer máquina.
+ */
+function seededRandom(seed: number): () => number {
+  let state = seed % 2147483647;
+
+  if (state <= 0) {
+    state += 2147483646;
+  }
+
+  return () => {
+    state = (state * 16807) % 2147483647;
+
+    return (state - 1) / 2147483646;
+  };
+}
+
+function hashString(value: string): number {
+  let hash = 0;
+
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) | 0;
+  }
+
+  return Math.abs(hash) + 1;
+}
+
+function round3(value: number): string {
+  return value.toFixed(3);
+}
+
+/**
+ * Plano de movimentos fictícios de um produto, por índice no catálogo:
+ *
+ *  - `índice % 7 === 0`: nenhum movimento — fica SEM ESTOQUE, de propósito,
+ *    para o relatório `GET /reports/out-of-stock` ter o que listar.
+ *  - `índice % 5 === 0` (e não cai no caso acima): uma entrada só, entre 30%
+ *    e 70% do mínimo — fica com ESTOQUE BAIXO, de propósito, para
+ *    `GET /reports/low-stock` e o dashboard.
+ *  - Caso normal: uma entrada confortável (150% a 300% do mínimo) e uma
+ *    saída parcial depois (10% a 30% da entrada) — estoque normal, com
+ *    histórico de duas movimentações.
+ */
+function planMovementsForProduct(sku: string, minStock: string, index: number): MovementPlan[] {
+  const rng = seededRandom(hashString(sku));
+  const min = Number.parseFloat(minStock);
+
+  if (index % 7 === 0) {
+    return [];
+  }
+
+  if (index % 5 === 0) {
+    const quantidade = min * (0.3 + rng() * 0.4);
+
+    return [
+      {
+        type: 'IN',
+        quantity: round3(quantidade),
+        reason: MovementReason.PURCHASE,
+        referenceDoc: `SEED-${sku}-1`,
+      },
+    ];
+  }
+
+  const entrada = min * (1.5 + rng() * 1.5);
+  const saida = entrada * (0.1 + rng() * 0.2);
+
+  return [
+    {
+      type: 'IN',
+      quantity: round3(entrada),
+      reason: MovementReason.PURCHASE,
+      referenceDoc: `SEED-${sku}-1`,
+    },
+    {
+      type: 'OUT',
+      quantity: round3(saida),
+      reason: MovementReason.SALE,
+      referenceDoc: `SEED-${sku}-2`,
+    },
+  ];
+}
+
 async function main(): Promise<void> {
   assertAmbienteDeDesenvolvimento();
 
@@ -574,6 +671,8 @@ async function main(): Promise<void> {
     console.log(`  fornecedores:  ${SUPPLIERS.length}`);
 
     // ── Produtos ───────────────────────────────────────────────────────────
+    const produtoPorSku = new Map<string, { id: string; minStock: string }>();
+
     for (const [index, product] of PRODUCTS.entries()) {
       const categoryId = categoryIdByName.get(product.category);
 
@@ -587,7 +686,7 @@ async function main(): Promise<void> {
       const supplierId = supplierIds[index % supplierIds.length];
       const sku = product.sku.toUpperCase();
 
-      await prisma.product.upsert({
+      const record = await prisma.product.upsert({
         where: { sku },
         update: {
           name: product.name,
@@ -603,22 +702,105 @@ async function main(): Promise<void> {
           name: product.name,
           categoryId,
           unit: product.unit,
-          // Saldo zero: só movimentação muda saldo, e movimentação é Fase 5.
+          // Saldo zero: só a movimentação real, abaixo, muda o saldo.
           currentStock: '0.000',
           minStock: product.minStock,
           unitCost: product.unitCost,
           ...(supplierId !== undefined ? { supplierId } : {}),
         },
       });
+      produtoPorSku.set(sku, { id: record.id, minStock: product.minStock });
     }
-    console.log(`  produtos:      ${PRODUCTS.length} (todos com saldo 0,000)`);
+    console.log(`  produtos:      ${PRODUCTS.length}`);
 
-    console.log('\nMovimentações: nenhuma, de propósito.');
-    console.log('  O service de movimentação é da Fase 5, e o seed não insere');
-    console.log('  histórico por fora da regra de negócio (ver §4.7 e o cabeçalho');
-    console.log('  deste arquivo).\n');
-    console.log('Credenciais de acesso: os e-mails acima, com as senhas definidas');
-    console.log('em SEED_*_PASSWORD no .env. O login entra na Fase 4.\n');
+    // ── Movimentações (D13, marco 5B) ───────────────────────────────────────
+    const operador = USERS.find((u) => u.role === UserRole.OPERATOR);
+    const operadorId = operador
+      ? (await prisma.user.findUniqueOrThrow({ where: { email: operador.email.toLowerCase() } })).id
+      : undefined;
+
+    if (!operadorId) {
+      throw new Error('usuário OPERATOR do seed não encontrado para assinar as movimentações.');
+    }
+
+    /**
+     * `StockMovementsService` e `AuditService` são instanciados aqui à mão,
+     * fora do contêiner de DI do Nest — `NestFactory.createApplicationContext`
+     * foi tentado e descartado: o `AllExceptionsFilter` (provider global)
+     * chama `logger.setContext(...)` de um `PinoLogger` que só é montado de
+     * verdade pelo bootstrap HTTP completo (`main.ts`), e falha fora dele. Os
+     * dois services usados aqui não dependem de HTTP nem de guard algum — só
+     * do `PrismaService` (que o `prisma` já criado acima satisfaz
+     * estruturalmente) e de um logger, que aqui é um stub silencioso. O
+     * `PrismaClient` que os dois de fato chamam em tempo de execução é o mesmo
+     * `prisma` que o resto do seed usa.
+     */
+    const loggerSilencioso = {
+      setContext: () => undefined,
+      error: () => undefined,
+      warn: () => undefined,
+      info: () => undefined,
+      debug: () => undefined,
+      trace: () => undefined,
+      fatal: () => undefined,
+    } as unknown as PinoLogger;
+    const audit = new AuditService(prisma as unknown as PrismaService, loggerSilencioso);
+    const movements = new StockMovementsService(prisma as unknown as PrismaService, audit);
+
+    let criadas = 0;
+    let puladas = 0;
+
+    for (const [index, product] of PRODUCTS.entries()) {
+      const sku = product.sku.toUpperCase();
+      const info = produtoPorSku.get(sku);
+
+      if (!info) {
+        continue;
+      }
+
+      for (const plano of planMovementsForProduct(sku, info.minStock, index)) {
+        const existente = await prisma.stockMovement.findFirst({
+          where: { referenceDoc: plano.referenceDoc },
+        });
+
+        if (existente) {
+          puladas += 1;
+          continue;
+        }
+
+        if (plano.type === 'IN') {
+          await movements.createIn(
+            {
+              productId: info.id,
+              quantity: plano.quantity,
+              reason: plano.reason,
+              referenceDoc: plano.referenceDoc,
+              note: 'dado fictício de demonstração',
+            },
+            operadorId,
+          );
+        } else {
+          await movements.createOut(
+            {
+              productId: info.id,
+              quantity: plano.quantity,
+              reason: plano.reason,
+              referenceDoc: plano.referenceDoc,
+              note: 'dado fictício de demonstração',
+            },
+            operadorId,
+          );
+        }
+        criadas += 1;
+      }
+    }
+
+    console.log(
+      `  movimentações: ${String(criadas)} criadas, ${String(puladas)} já existiam (idempotente)`,
+    );
+
+    console.log('\nCredenciais de acesso: os e-mails acima, com as senhas definidas');
+    console.log('em SEED_*_PASSWORD no .env.\n');
   } finally {
     await prisma.$disconnect();
   }
