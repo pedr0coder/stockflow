@@ -8,7 +8,10 @@ import { v7 as uuidv7 } from 'uuid';
 import { AuthModule } from './auth/auth.module';
 import { AuditModule } from './audit/audit.module';
 import { CategoriesModule } from './categories/categories.module';
+import { DashboardModule } from './dashboard/dashboard.module';
+import { InventoriesModule } from './inventories/inventories.module';
 import { ProductsModule } from './products/products.module';
+import { ReportsModule } from './reports/reports.module';
 import { StockMovementsModule } from './stock-movements/stock-movements.module';
 import { SuppliersModule } from './suppliers/suppliers.module';
 import { UsersModule } from './users/users.module';
@@ -144,6 +147,9 @@ const REDACTED_PATHS = [
     SuppliersModule,
     ProductsModule,
     StockMovementsModule,
+    InventoriesModule,
+    DashboardModule,
+    ReportsModule,
   ],
   providers: [
     /**
