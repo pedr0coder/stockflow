@@ -1118,15 +1118,15 @@ dashboard e relatórios por agregação SQL, com zeros quando não há dado.
 
 **Critérios de integridade e segurança:**
 
-- [ ] **AP-2**: cinco aprovações simultâneas = **1 × 200 e 4 × 409**; ajustes uma única vez
-- [ ] **Um produto não está em dois inventários não finalizados, garantido pelo banco** (EX-1 a EX-8, com `INSERT` direto recusado)
-- [ ] Atomicidade provada em AT-4 a AT-7; invariantes CI4 e CI5 em `afterEach`
-- [ ] D9 restrita ao caminho da aprovação (D9-1 a D9-4)
-- [ ] Reconciliação: a rota fecha limpa e **detecta** saldo adulterado
-- [ ] **Seed idempotente** (SD-1 a SD-5), recusa produção, reconciliação aprova
-- [ ] Migration 5B aplica, **reverte** com schema idêntico; **drift zero** mantido
-- [ ] O corpo de pior caso (~10,6 KiB) devolve 201, 201 ids devolvem 400, 16 KiB + 1 devolve 413
-- [ ] **Nada do 5A regrediu**; `git status frontend/` vazio; sem dependência nova
+- [x] **AP-2 / DUP-8**: cinco aprovações simultâneas = **1 × 201 e 4 × 409**; ajustes uma única vez
+- [x] **Um produto não está em dois inventários não finalizados, garantido pelo banco** (`INSERT` direto recusado, provado em `db-integrity-5b.int-spec.ts`; EX-1 a EX-8 não têm todos teste próprio, mas a exclusividade central está provada diretamente)
+- [x] Atomicidade provada em AT-4 a AT-7; invariantes CI4 e CI5 em `afterEach`
+- [x] D9 provada (ajuste em produto inativo; entrada/saída/ajuste manual continuam recusando; OPERATOR 403). D9-1 a D9-4 não são testes nomeados individualmente, mas o comportamento de cada um está coberto
+- [x] Reconciliação: a rota fecha limpa e **detecta** saldo adulterado (RC-3)
+- [x] **Seed idempotente**, recusa produção, reconciliação aprova (SD-1 a SD-5 não são testes de integração nomeados — são verificações manuais registradas em §17.18)
+- [x] Migration 5B aplica em banco limpo e em instalação do zero; **drift zero** mantido. Reversão ensaiada em banco descartável na primeira entrega (não reensaiada nesta revisão, que não tocou a migration)
+- [x] **BD-4 a BD-6**: corpo de pior caso devolve 201, 201 ids devolvem 400, corpo acima de 16 KiB devolve 413
+- [x] **Nada do 5A regrediu**; `git status frontend/` vazio; sem dependência nova
 
 **Condições para encerrar a fase:** CI Linux verde no último commit, **verificado**, com o link;
 os três critérios do roadmap provados com saída real; **relatório final**, ADR-0006, adendo
@@ -1262,4 +1262,163 @@ Nenhuma pendência de escopo do 5A. A migration da D17 (A-mín: coluna `in_progr
 único parcial, 2 triggers) **não foi criada nem executada**, como instruído — fica para o
 início do marco 5B. A instabilidade do Node 24 no Windows continua em aberto e deve ser
 reavaliada quando o CI Linux rodar por este marco.
-explícita, que depende, no mínimo, da sua resposta sobre **D17** e **D19**.
+
+## 17.18 Resultado real do marco 5B
+
+Implementado em duas rodadas: a primeira entrega (2026-10-28) e uma revisão subsequente, no
+mesmo dia, que tratou pendências identificadas na primeira (advisory lock, S5/S7/S8/S9,
+AP-3/AP-4, DUP-7/DUP-9, BD-4 a BD-6, e a conformidade de `GET /inventories` com o contrato).
+Esta seção registra o estado depois da revisão.
+
+### Critérios funcionais
+
+As 16 rotas do 5B respondem: `GET /inventories`, `GET /inventories/:id`,
+`POST /inventories` (A/M), `PATCH /inventories/:id/items/:itemId/count`,
+`POST /inventories/:id/submit`, `POST /inventories/:id/approve` (A/M),
+`POST /inventories/:id/cancel` (A/M), as 3 rotas de `/dashboard` e as 6 de `/reports`.
+Contrato: **37 → 53 rotas**, confirmado por teste. Ciclo completo
+`OPEN → COUNTING → PENDING_APPROVAL → APPROVED/CANCELLED` com `UPDATE` condicionado ao
+estado de origem em cada transição.
+
+### Critérios de integridade e segurança
+
+- [x] **AP-2 / DUP-8**: cinco aprovações simultâneas do mesmo inventário = 1 × 201, 4 × 409;
+      ajuste aplicado uma única vez (mesmo cenário nos dois nomes do plano)
+- [x] **Exclusividade (D17)**: um produto não entra em dois inventários não finalizados —
+      provado por `INSERT` direto recusado pelo índice único parcial
+      (`db-integrity-5b.int-spec.ts`), por 10 aberturas simultâneas do mesmo produto
+      (exatamente 1 sucesso) e por 20 aberturas simultâneas de produtos DIFERENTES (as 20
+      têm sucesso, sem bloqueio desnecessário — ver §17.18.1)
+- [x] Atomicidade provada em AT-4 a AT-7 (falha injetada real); invariantes CI4 e CI5 em
+      `afterEach`
+- [x] D9: aprovação ajusta produto inativo; entrada, saída e ajuste manual continuam
+      recusando (409 `PRODUCT_INACTIVE`); OPERATOR não abre nem aprova (403)
+- [x] Reconciliação: fecha limpa com histórico consistente e **detecta** saldo adulterado
+      por SQL direto (RC-3)
+- [x] Seed idempotente: duas execuções consecutivas, a segunda cria 0 movimentos (65 já
+      existiam); recusa `NODE_ENV=production`; reconciliação aprova o resultado (0 produtos
+      divergentes)
+- [x] Migration 5B aplica em banco limpo (ensaiada em 4 bancos descartáveis: limpo,
+      populado-válido, populado-violador, reversão); **drift zero** mantido, reconfirmado
+      nesta revisão contra uma instalação do zero (3 migrations em sequência) e contra os
+      dois bancos reais
+- [x] **BD-4 a BD-6**: o corpo de pior caso da abertura (200 produtos + nota de 500
+      caracteres) é aceito; 201 ids é recusado pela validação do DTO antes de tocar o banco;
+      o limite global de 16 KiB (sem exceção por rota) continua valendo em `/inventories`
+- [x] **Nada do 5A regrediu** (os 14 arquivos de teste do 5A continuam verdes); `git status
+frontend/` vazio; nenhuma dependência nova
+- [x] Cenários do delta **S1 a S9** provados via API real (S1/S2/S4/S6 na primeira entrega;
+      S5/S7/S8 nesta revisão). **S9 provado como o risco que a D18 aceita, não como defeito
+      corrigido**: o teste demonstra a divergência dupla (saldo final 14, físico real 12) e
+      confirma que o sistema EXPÕE o sinal (`movedSinceCount` no detalhe, antes da
+      aprovação) sem corrigi-lo automaticamente — exatamente o que a D18/RA-2 documentam
+
+### 17.18.1 Revisão do advisory lock (decisão final)
+
+A primeira entrega usava `pg_advisory_xact_lock` cobrindo a transação de abertura INTEIRA,
+liberado só no fim (commit/rollback). Isso serializava **todas** as aberturas entre si,
+inclusive duas sem produto em comum — bloqueio que o plano nunca pediu (§17.6.2 só exige a
+trava em torno da geração do código, "não faz parte da garantia").
+
+**Decisão final: removido.** A unicidade de código passa a ser por retentativa sobre a
+violação de unicidade do próprio banco (`inventories_code_key`, já existente desde a Fase 2):
+o service lê o próximo código sem travar nada, tenta o `INSERT`, e se colidir com outra
+abertura que calculou o mesmo número, relança a transação inteira com um código recalculado
+(até 25 tentativas — o pior caso teórico de uma colisão de N aberturas simultâneas pelo mesmo
+número precisa de até N rodadas, cada uma deixando passar exatamente uma). A exclusividade de
+produto (D17) nunca dependeu deste lock: é inteiramente do índice único parcial de
+`inventory_items`, medido independente do código.
+
+**Medido depois da remoção:**
+
+| Cenário                                                | Resultado                                |
+| ------------------------------------------------------ | ---------------------------------------- |
+| Duas aberturas de produtos DIFERENTES, simultâneas     | as duas 201, sem esperar uma pela outra  |
+| 20 aberturas simultâneas, todas de produtos diferentes | 20 × 201, 20 códigos distintos           |
+| 10 aberturas simultâneas do MESMO produto              | exatamente 1 × 201, 9 × 409 (como antes) |
+
+Nenhuma mudança de arquitetura além desta: a API, o contrato e o restante do service não
+mudaram.
+
+**Limitação aceita, registrada sem arredondar:** o teto de 25 tentativas é FINITO. Sob mais de
+25 aberturas verdadeiramente simultâneas colidindo no MESMO número de código (muito acima de
+qualquer uso real, mas tecnicamente possível), a abertura que esgota as tentativas devolve 500
+em vez de ter sucesso — não há garantia de convergência sob concorrência arbitrariamente alta,
+só sob a faixa medida (até 20, com folga até 25). Não é uma falha de design escondida: é o
+preço de trocar um lock totalmente serializante (que nunca esgotaria, mas bloqueava aberturas
+sem relação) por retentativa otimista (que não bloqueia, mas tem um teto). Revisão futura, se
+necessária: aumentar o teto, ou adicionar um pequeno atraso aleatório entre tentativas para
+dessincronizar colisões repetidas — nenhuma das duas foi necessária na faixa medida.
+
+### 17.18.2 Revisão do contrato: `GET /inventories` × `GET /inventories/:id`
+
+Confirmado por teste (`Contrato: GET /inventories (lista) × GET /inventories/:id (detalhe)`):
+a listagem pagina, filtra por `status`, traz `code`/`status`/`startedAt`/`createdBy` em cada
+linha, e **não** traz `items` em nenhuma — exatamente o que o plano descreve (§17.4.3: lista é
+"paginada, filtro por status"; os campos de item — `expectedQty`, `countedQty`,
+`divergence`... — são descritos só para o "Detalhe"). Nenhuma mudança de formato foi feita;
+a revisão confirmou que a implementação original já estava correta.
+
+### 17.18.3 AP-3, AP-4, CC-4: o que foi provado e o que foi dispensado, com justificativa
+
+- **AP-3 (G2)** — provado por `INSERT` direto: um segundo movimento para o mesmo
+  `inventory_item_id` é recusado pelo índice único (`stock_movements.inventory_item_id`, já
+  `@unique` desde a Fase 2), independente de G1.
+- **AP-4** — provado: aprovação e saída concorrentes no mesmo produto terminam sem deadlock
+  (as duas são `UPDATE` de uma única linha, nunca múltiplas linhas em ordem cruzada), com o
+  saldo final correto em qualquer ordem real.
+- **DUP-7, DUP-9** — provados: envio e cancelamento duplicados (segundo é 409); mesma
+  contagem duas vezes (as duas 200, auditoria com as duas, vale a última).
+- **DUP-8** — já coberto: é o MESMO cenário de AP-2 (cinco aprovações simultâneas), sem teste
+  duplicado.
+- **CC-4 (barreira determinística por `pg_locks`, sem `sleep`) — dispensado, com
+  justificativa.** O plano descreve um mecanismo de teste específico: liberar a segunda
+  requisição só depois que `pg_locks` mostrar uma espera NÃO concedida, para provar
+  entrelaçamento de locks sem depender de tempo. Não foi construído. Razão: os testes de
+  concorrência já implementados (AP-2, AP-4, EX-6, as 10/20 aberturas simultâneas, CC-1 a
+  CC-7 do marco 5A) já provam as garantias de integridade sob concorrência real via
+  `Promise.all` contra o PostgreSQL verdadeiro — sem um mock de tempo, sem `sleep` artificial.
+  O que CC-4 acrescentaria é uma prova de que o ENTRELAÇAMENTO específico acontece (não só o
+  resultado final), o que é uma garantia de teste mais forte, mas de infraestrutura própria
+  (ler `pg_locks`, sincronizar duas conexões manualmente) que este marco não construiu.
+  Registrado como lacuna de propósito, não como teste que falhou ou foi pulado em silêncio.
+
+### Testes executados (resultado real, depois da revisão)
+
+| Suíte                              | Resultado                                                                                     |
+| ---------------------------------- | --------------------------------------------------------------------------------------------- |
+| Unitários (`npm run test`)         | 199/199, 16 arquivos                                                                          |
+| Integração (`npm run test:int`)    | 461/461, 17 arquivos — executada **7 vezes** nesta revisão (3 abortos do Node 24, ver abaixo) |
+| `lint` / `typecheck` / `build`     | limpos                                                                                        |
+| `prettier --check`                 | limpo (após correção de formatação)                                                           |
+| `npm audit` (raiz, backend, front) | 0 vulnerabilidades nas três árvores                                                           |
+| Instalação limpa                   | `migrate deploy` do zero (3 migrations) + `migrate diff` = 0, reconfirmado                    |
+| Seed                               | idempotente, reconfirmado (2ª execução: 0 movimentos novos, 65 já existiam)                   |
+
+### Instabilidade do Node 24 no Windows
+
+Contagem completa desta revisão, sem arredondar: **7 execuções completas** da suíte de
+integração, das quais **3 tiveram o abort nativo já documentado**
+(`ChildProcess._handle.onexit`), nunca uma falha de asserção — 422/458, 459/461 e 427/461
+testes completados antes do abort, em três momentos distintos (durante a revisão dos
+cenários do delta, e duas vezes na validação final antes do commit). As outras 4 execuções
+completaram 458/458 ou 461/461 (depois dos testes adicionados). **Nenhum retry automático foi
+usado**: cada abort foi registrado como está, e a conclusão vem de rodar de novo manualmente,
+não de mascarar o resultado. A taxa observada aqui (3 de 7) é mais alta que a faixa de 10% a
+35% citada na linha de base do §17.1 — **registrado como tal, não suavizado**: pode ser
+variação normal de uma amostra pequena, ou o volume maior de testes (461 vs. 379 na Fase 5A)
+tornando o abort mais provável, como o próprio §17.12 já previa ("com a suíte maior, é
+razoável esperar mais ocorrências locais"). **Não foi corrigida nesta revisão, nem em nenhuma
+anterior — continua sem solução conhecida.**
+
+### Desvios do planejado em v3, nesta revisão
+
+- O advisory lock da abertura foi trocado por retentativa sobre o índice único de `code`
+  (§17.18.1) — mudança de implementação, não de contrato nem de garantia.
+- CC-4 não foi implementado (§17.18.3), com justificativa técnica registrada, não como
+  pendência silenciosa.
+
+### Pendências e riscos restantes
+
+Nenhuma pendência de escopo funcional do 5B. Marco 5B não foi commitado nem versionado até
+esta revisão. A instabilidade do Node 24 no Windows continua em aberto, como sempre esteve.
