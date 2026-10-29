@@ -4,9 +4,11 @@ import { AuthLayout } from '@/app/layouts/AuthLayout';
 import { PhasePlaceholder } from '@/components/shared/PhasePlaceholder';
 import { LoginPage } from '@/features/auth/pages/LoginPage';
 import { ProtectedRoute } from '@/features/auth/ProtectedRoute';
+import { RoleGuard } from '@/features/auth/RoleGuard';
 import { DashboardPage } from '@/features/dashboard/pages/DashboardPage';
 import { DesignSystemPage } from '@/pages/DesignSystemPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
+import type { UserRole } from '@/types/auth';
 
 /**
  * Rotas da aplicação, seguindo o mapa de telas (docs/06-mvp-e-telas.md §6.2).
@@ -26,6 +28,11 @@ interface PlaceholderRoute {
   description: string;
   phase: number;
   willDeliver: string;
+  /**
+   * Papéis autorizados, conforme `lib/nav-items.ts` e `docs/05-api.md`.
+   * `undefined` = os três papéis (nenhuma restrição de interface).
+   */
+  roles?: readonly UserRole[];
 }
 
 const PLACEHOLDER_ROUTES: readonly PlaceholderRoute[] = [
@@ -140,6 +147,7 @@ const PLACEHOLDER_ROUTES: readonly PlaceholderRoute[] = [
     phase: 4,
     willDeliver:
       'Cadastro, alteração de papel e inativação, com cada ação registrada na auditoria.',
+    roles: ['ADMIN', 'MANAGER'],
   },
   {
     path: 'audit',
@@ -148,6 +156,7 @@ const PLACEHOLDER_ROUTES: readonly PlaceholderRoute[] = [
     phase: 4,
     willDeliver:
       'Consulta somente leitura do log, com autor, ação, entidade e estado anterior e posterior.',
+    roles: ['ADMIN'],
   },
   {
     path: 'profile',
@@ -158,7 +167,15 @@ const PLACEHOLDER_ROUTES: readonly PlaceholderRoute[] = [
   },
 ];
 
-const placeholderRoutes: RouteObject[] = PLACEHOLDER_ROUTES.map((route) => ({
+/**
+ * Rotas sem restrição de papel ficam soltas; as com `roles` ganham um
+ * `RoleGuard` pathless (sem `path` próprio) como pai, agrupadas pela MESMA
+ * lista de papéis — react-router aceita rota sem `path` como camada de
+ * composição pura.
+ */
+const openPlaceholderRoutes: RouteObject[] = PLACEHOLDER_ROUTES.filter(
+  (route) => route.roles === undefined,
+).map((route) => ({
   path: route.path,
   element: (
     <PhasePlaceholder
@@ -169,6 +186,27 @@ const placeholderRoutes: RouteObject[] = PLACEHOLDER_ROUTES.map((route) => ({
     />
   ),
 }));
+
+const guardedPlaceholderRoutes: RouteObject[] = PLACEHOLDER_ROUTES.filter(
+  (route) => route.roles !== undefined,
+).map((route) => ({
+  element: <RoleGuard roles={route.roles ?? []} />,
+  children: [
+    {
+      path: route.path,
+      element: (
+        <PhasePlaceholder
+          title={route.title}
+          description={route.description}
+          phase={route.phase}
+          willDeliver={route.willDeliver}
+        />
+      ),
+    },
+  ],
+}));
+
+const placeholderRoutes: RouteObject[] = [...openPlaceholderRoutes, ...guardedPlaceholderRoutes];
 
 export const router = createBrowserRouter([
   {
