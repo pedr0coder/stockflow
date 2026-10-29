@@ -5,7 +5,15 @@ import { PhasePlaceholder } from '@/components/shared/PhasePlaceholder';
 import { LoginPage } from '@/features/auth/pages/LoginPage';
 import { ProtectedRoute } from '@/features/auth/ProtectedRoute';
 import { RoleGuard } from '@/features/auth/RoleGuard';
+import { CategoriesPage } from '@/features/categories/pages/CategoriesPage';
 import { DashboardPage } from '@/features/dashboard/pages/DashboardPage';
+import { ProductDetailPage } from '@/features/products/pages/ProductDetailPage';
+import { ProductEditPage } from '@/features/products/pages/ProductEditPage';
+import { ProductNewPage } from '@/features/products/pages/ProductNewPage';
+import { ProductsPage } from '@/features/products/pages/ProductsPage';
+import { SupplierDetailPage } from '@/features/suppliers/pages/SupplierDetailPage';
+import { SupplierNewPage } from '@/features/suppliers/pages/SupplierNewPage';
+import { SuppliersPage } from '@/features/suppliers/pages/SuppliersPage';
 import { DesignSystemPage } from '@/pages/DesignSystemPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 import type { UserRole } from '@/types/auth';
@@ -36,65 +44,6 @@ interface PlaceholderRoute {
 }
 
 const PLACEHOLDER_ROUTES: readonly PlaceholderRoute[] = [
-  {
-    path: 'products',
-    title: 'Produtos',
-    description: 'Catálogo com saldo atual, estoque mínimo, categoria e fornecedor.',
-    phase: 4,
-    willDeliver:
-      'Listagem com busca, filtro por categoria e situação de estoque, ordenação, paginação e histórico por produto.',
-  },
-  {
-    path: 'products/new',
-    title: 'Novo produto',
-    description: 'Cadastro de produto.',
-    phase: 4,
-    willDeliver: 'Formulário de cadastro com SKU único, unidade de medida e estoque mínimo.',
-  },
-  {
-    path: 'products/:id',
-    title: 'Detalhe do produto',
-    description: 'Dados cadastrais e histórico de movimentações.',
-    phase: 4,
-    willDeliver: 'Abas com os dados do produto e o extrato de movimentações, em ordem decrescente.',
-  },
-  {
-    path: 'products/:id/edit',
-    title: 'Editar produto',
-    description: 'Alteração dos dados cadastrais.',
-    phase: 4,
-    willDeliver:
-      'Edição dos dados cadastrais. O saldo não é editável aqui: ele só muda por movimentação.',
-  },
-  {
-    path: 'categories',
-    title: 'Categorias',
-    description: 'Classificação dos produtos do estoque.',
-    phase: 4,
-    willDeliver:
-      'Cadastro, edição e inativação, com bloqueio de inativar categoria que tem produto ativo.',
-  },
-  {
-    path: 'suppliers',
-    title: 'Fornecedores',
-    description: 'Fornecedores vinculados aos produtos.',
-    phase: 4,
-    willDeliver: 'Cadastro com CNPJ único, contato e a lista de produtos vinculados.',
-  },
-  {
-    path: 'suppliers/new',
-    title: 'Novo fornecedor',
-    description: 'Cadastro de fornecedor.',
-    phase: 4,
-    willDeliver: 'Formulário de cadastro com validação de documento.',
-  },
-  {
-    path: 'suppliers/:id',
-    title: 'Detalhe do fornecedor',
-    description: 'Dados do fornecedor e produtos vinculados.',
-    phase: 4,
-    willDeliver: 'Dados cadastrais e a lista de produtos que vêm deste fornecedor.',
-  },
   {
     path: 'movements',
     title: 'Movimentações',
@@ -222,6 +171,14 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <Navigate to="/dashboard" replace /> },
           { path: 'dashboard', element: <DashboardPage /> },
+          { path: 'categories', element: <CategoriesPage /> },
+          { path: 'products', element: <ProductsPage /> },
+          { path: 'products/new', element: <ProductNewPage /> },
+          { path: 'products/:id', element: <ProductDetailPage /> },
+          { path: 'products/:id/edit', element: <ProductEditPage /> },
+          { path: 'suppliers', element: <SuppliersPage /> },
+          { path: 'suppliers/new', element: <SupplierNewPage /> },
+          { path: 'suppliers/:id', element: <SupplierDetailPage /> },
           /**
            * Vitrine do design system.
            *
