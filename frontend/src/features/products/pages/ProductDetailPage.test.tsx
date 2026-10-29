@@ -116,7 +116,9 @@ describe('ProductDetailPage', () => {
     await user.click(screen.getByRole('tab', { name: 'Histórico' }));
 
     expect(await screen.findByText('Entrada')).toBeInTheDocument();
-    expect(screen.getByText('PURCHASE')).toBeInTheDocument();
+    // O motivo é traduzido, não o código cru (Marco 6C: REASON_LABEL,
+    // reaproveitado aqui do mesmo mapa que a tela de movimentações usa).
+    expect(screen.getByText('Compra')).toBeInTheDocument();
     expect(screen.getByText('Carla Operadora')).toBeInTheDocument();
   });
 

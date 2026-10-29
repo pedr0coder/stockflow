@@ -20,6 +20,7 @@ import {
   useProductQuery,
   useSetProductStatusMutation,
 } from '@/features/products/queries';
+import { REASON_LABEL, type MovementReasonValue } from '@/features/stock-movements/api';
 import { useSupplierQuery } from '@/features/suppliers/queries';
 import { ApiError } from '@/lib/api-client';
 import { messageForCode } from '@/lib/error-messages';
@@ -54,7 +55,13 @@ export function ProductDetailPage(): ReactNode {
       enableSorting: false,
       cell: ({ row }) => <MovementTypeBadge type={row.original.type} />,
     },
-    { accessorKey: 'reason', header: 'Motivo', enableSorting: false },
+    {
+      accessorKey: 'reason',
+      header: 'Motivo',
+      enableSorting: false,
+      cell: ({ row }) =>
+        REASON_LABEL[row.original.reason as MovementReasonValue] ?? row.original.reason,
+    },
     {
       accessorKey: 'quantity',
       header: 'Quantidade',
