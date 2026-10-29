@@ -43,4 +43,22 @@ export const queryKeys = {
     movementsChart: (days: number) => ['dashboard', 'movements-chart', days] as const,
     recentMovements: (limit: number) => ['dashboard', 'recent-movements', limit] as const,
   },
+  stockMovements: domain('stock-movements'),
+  inventories: domain('inventories'),
+  reports: {
+    lowStock: () => ['reports', 'low-stock'] as const,
+    outOfStock: () => ['reports', 'out-of-stock'] as const,
+    movements: (params: { dateFrom?: string; dateTo?: string }) =>
+      ['reports', 'movements', params] as const,
+    inventories: () => ['reports', 'inventories'] as const,
+    divergences: () => ['reports', 'divergences'] as const,
+    stockReconciliation: () => ['reports', 'stock-reconciliation'] as const,
+  },
+  users: domain('users'),
+  audit: {
+    all: ['audit'] as const,
+    list: (params: ListParams) => ['audit', 'list', params] as const,
+    forEntity: (entity: string, entityId: string, params: ListParams) =>
+      ['audit', 'entity', entity, entityId, params] as const,
+  },
 };

@@ -2,18 +2,28 @@ import { createBrowserRouter, Navigate, type RouteObject } from 'react-router';
 import { AppShell } from '@/app/layouts/AppShell';
 import { AuthLayout } from '@/app/layouts/AuthLayout';
 import { PhasePlaceholder } from '@/components/shared/PhasePlaceholder';
+import { AuditPage } from '@/features/audit/pages/AuditPage';
 import { LoginPage } from '@/features/auth/pages/LoginPage';
 import { ProtectedRoute } from '@/features/auth/ProtectedRoute';
 import { RoleGuard } from '@/features/auth/RoleGuard';
 import { CategoriesPage } from '@/features/categories/pages/CategoriesPage';
 import { DashboardPage } from '@/features/dashboard/pages/DashboardPage';
+import { InventoryDetailPage } from '@/features/inventories/pages/InventoryDetailPage';
+import { InventoryNewPage } from '@/features/inventories/pages/InventoryNewPage';
+import { InventoriesPage } from '@/features/inventories/pages/InventoriesPage';
 import { ProductDetailPage } from '@/features/products/pages/ProductDetailPage';
 import { ProductEditPage } from '@/features/products/pages/ProductEditPage';
 import { ProductNewPage } from '@/features/products/pages/ProductNewPage';
 import { ProductsPage } from '@/features/products/pages/ProductsPage';
+import { ReportsPage } from '@/features/reports/pages/ReportsPage';
+import { MovementNewPage } from '@/features/stock-movements/pages/MovementNewPage';
+import { MovementsPage } from '@/features/stock-movements/pages/MovementsPage';
 import { SupplierDetailPage } from '@/features/suppliers/pages/SupplierDetailPage';
 import { SupplierNewPage } from '@/features/suppliers/pages/SupplierNewPage';
 import { SuppliersPage } from '@/features/suppliers/pages/SuppliersPage';
+import { UserDetailPage } from '@/features/users/pages/UserDetailPage';
+import { UserNewPage } from '@/features/users/pages/UserNewPage';
+import { UsersPage } from '@/features/users/pages/UsersPage';
 import { DesignSystemPage } from '@/pages/DesignSystemPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 import type { UserRole } from '@/types/auth';
@@ -44,69 +54,6 @@ interface PlaceholderRoute {
 }
 
 const PLACEHOLDER_ROUTES: readonly PlaceholderRoute[] = [
-  {
-    path: 'movements',
-    title: 'Movimentações',
-    description: 'Histórico imutável de entradas, saídas e ajustes.',
-    phase: 5,
-    willDeliver:
-      'Extrato global com filtro por produto, tipo, motivo, autor e período. O histórico não é editável, por desenho.',
-  },
-  {
-    path: 'movements/new',
-    title: 'Nova movimentação',
-    description: 'Registro de entrada, saída ou ajuste.',
-    phase: 5,
-    willDeliver:
-      'Lançamento com atualização transacional do saldo, recusando saída acima do disponível.',
-  },
-  {
-    path: 'inventories',
-    title: 'Inventários',
-    description: 'Contagens físicas e divergências apuradas.',
-    phase: 5,
-    willDeliver: 'Abertura, contagem, cálculo de divergência e aprovação dos ajustes.',
-  },
-  {
-    path: 'inventories/new',
-    title: 'Novo inventário',
-    description: 'Abertura de contagem.',
-    phase: 5,
-    willDeliver: 'Seleção dos produtos a contar e abertura do inventário.',
-  },
-  {
-    path: 'inventories/:id',
-    title: 'Detalhe do inventário',
-    description: 'Contagem, divergências e aprovação.',
-    phase: 5,
-    willDeliver:
-      'Registro da quantidade contada, divergência calculada e aprovação em transação única.',
-  },
-  {
-    path: 'reports',
-    title: 'Relatórios',
-    description: 'Estoque baixo, sem estoque, movimentações e divergências.',
-    phase: 5,
-    willDeliver: 'Seis relatórios, incluindo a reconciliação entre saldo e soma das movimentações.',
-  },
-  {
-    path: 'users',
-    title: 'Usuários',
-    description: 'Contas de acesso e seus papéis.',
-    phase: 4,
-    willDeliver:
-      'Cadastro, alteração de papel e inativação, com cada ação registrada na auditoria.',
-    roles: ['ADMIN', 'MANAGER'],
-  },
-  {
-    path: 'audit',
-    title: 'Auditoria',
-    description: 'Registro das ações relevantes do sistema.',
-    phase: 4,
-    willDeliver:
-      'Consulta somente leitura do log, com autor, ação, entidade e estado anterior e posterior.',
-    roles: ['ADMIN'],
-  },
   {
     path: 'profile',
     title: 'Meu perfil',
@@ -179,6 +126,24 @@ export const router = createBrowserRouter([
           { path: 'suppliers', element: <SuppliersPage /> },
           { path: 'suppliers/new', element: <SupplierNewPage /> },
           { path: 'suppliers/:id', element: <SupplierDetailPage /> },
+          { path: 'movements', element: <MovementsPage /> },
+          { path: 'movements/new', element: <MovementNewPage /> },
+          { path: 'inventories', element: <InventoriesPage /> },
+          { path: 'inventories/new', element: <InventoryNewPage /> },
+          { path: 'inventories/:id', element: <InventoryDetailPage /> },
+          { path: 'reports', element: <ReportsPage /> },
+          {
+            element: <RoleGuard roles={['ADMIN', 'MANAGER']} />,
+            children: [
+              { path: 'users', element: <UsersPage /> },
+              { path: 'users/new', element: <UserNewPage /> },
+              { path: 'users/:id', element: <UserDetailPage /> },
+            ],
+          },
+          {
+            element: <RoleGuard roles={['ADMIN']} />,
+            children: [{ path: 'audit', element: <AuditPage /> }],
+          },
           /**
            * Vitrine do design system.
            *
