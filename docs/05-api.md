@@ -48,14 +48,17 @@ seria superfície de ataque e de erro.
 | 429    | Rate limit excedido                                                 |
 | 500    | Erro inesperado (sem vazar detalhe interno)                         |
 
-**Códigos de erro de negócio** (campo `code`, estável):
+**Códigos de erro de negócio** (campo `code`, estável). Lista conferida direto em
+`backend/src/common/errors/error-codes.ts` na Fase 6 (`docs/18-plano-fase-6.md §18.1`,
+achado 1): a versão anterior desta lista estava desatualizada desde o marco 5B, sem os dois
+últimos códigos abaixo.
 
 ```
-INSUFFICIENT_STOCK        PRODUCT_INACTIVE        SKU_ALREADY_EXISTS
-EMAIL_ALREADY_EXISTS      INVALID_CREDENTIALS     USER_INACTIVE
-CATEGORY_HAS_PRODUCTS     INVENTORY_NOT_OPEN      INVENTORY_ALREADY_APPROVED
-INVALID_TYPE_REASON       REFRESH_TOKEN_REUSED    FORBIDDEN_ROLE
-PAYLOAD_TOO_LARGE
+INSUFFICIENT_STOCK          PRODUCT_INACTIVE             SKU_ALREADY_EXISTS
+EMAIL_ALREADY_EXISTS        INVALID_CREDENTIALS          USER_INACTIVE
+CATEGORY_HAS_PRODUCTS       INVENTORY_NOT_OPEN           INVENTORY_ALREADY_APPROVED
+INVALID_TYPE_REASON         REFRESH_TOKEN_REUSED         FORBIDDEN_ROLE
+PAYLOAD_TOO_LARGE           INVENTORY_INVALID_STATE      PRODUCT_IN_OPEN_INVENTORY
 ```
 
 **Forma do erro de validação** (400, `code: VALIDATION_ERROR`)
