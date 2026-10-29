@@ -817,3 +817,183 @@ rodada, além do que já está registrado acima:
 
 Todas as dez verificações pedidas nesta rodada foram executadas e confirmadas. Autorização
 de commit/push recebida e condicionada a elas — condições satisfeitas.
+
+## 18.20 Marco 6B — resultados reais (implementado, validado, aguardando revisão)
+
+Autorização recebida exclusivamente para o Marco 6B: produtos, categorias, fornecedores e
+dashboard, conectados à API real. Nenhum módulo de negócio do backend foi alterado; nenhuma
+migration foi executada; `recharts` 3.10.1 instalado, exatamente a versão já pré-aprovada em
+`03-stack.md`. Nada foi commitado.
+
+### 18.20.1 Diagnóstico inicial — divergências encontradas entre contrato e implementação
+
+- **`DataTable` (Fase 3) paginava e ordenava só no cliente** — correto quando `data` era o
+  conjunto inteiro (sem API real), errado para uma API que pagina no servidor. Resolvido
+  estendendo o componente com um modo `server` opcional (`pageIndex`/`pageCount`/
+  `onPageChange`, `sorting`/`onSortingChange`), usando `manualPagination`/`manualSorting` do
+  `@tanstack/react-table` — comportamento padrão sem a prop é preservado, os 24 testes
+  originais do componente continuam passando sem alteração.
+- **Os 4 indicadores do dashboard (placeholder da Fase 3) não batiam com `DashboardSummaryDto`
+  real.** O placeholder previa "Produtos cadastrados" e "Itens em estoque"; o backend calcula
+  `activeProducts`, `lowStock`, `outOfStock`, `movementsLast30Days` — não existe um agregado de
+  soma de itens em estoque, e "cadastrados" contaria inativos, que o backend exclui. Resolvido
+  renomeando os 4 cards para o que a API de fato calcula, sem alterar o backend nem inventar um
+  endpoint novo.
+- Os demais contratos (produtos, categorias, fornecedores — endpoints, DTOs, RBAC, códigos de
+  erro) foram conferidos direto no código-fonte do backend e batem exatamente com
+  `docs/05-api.md §5.4–5.6, §5.9` — nenhuma outra divergência encontrada desta vez.
+
+### 18.20.2 Telas e funcionalidades implementadas
+
+- **Categorias** (`/categories`): listagem com filtro de situação, criação/edição por painel
+  lateral (`Sheet` — o mapa de telas não reserva rota própria de criação), ativação/inativação
+  com `CATEGORY_HAS_PRODUCTS` (409) exibido como mensagem compreensível.
+- **Fornecedores** (`/suppliers`, `/suppliers/new`, `/suppliers/:id`): listagem com busca
+  (debounce de 400ms) e filtro de situação, cadastro em página própria, edição inline no
+  detalhe, produtos vinculados via `GET /suppliers/:id/products`, ativação/inativação.
+- **Produtos** (`/products`, `/products/new`, `/products/:id`, `/products/:id/edit`): listagem
+  com busca, filtro por categoria/situação de estoque/situação, ordenação por coluna
+  (servidor), cadastro e edição com seleção de categoria/fornecedor/unidade, detalhe em abas
+  (Dados / Histórico, com `GET /products/:id/movements`), ativação/inativação.
+  **`currentStock` não aparece em nenhum formulário** — nem como campo, nem no corpo da
+  requisição (confirmado por teste, §18.20.4).
+- **Dashboard** (`/dashboard`): 4 indicadores reais, gráfico de movimentações por período
+  (7/30/90 dias, `recharts`, cores por tipo IN/OUT/ADJUSTMENT) e lista de movimentações
+  recentes — tudo de `GET /dashboard/summary`, `/movements-chart`, `/recent-movements`.
+- Responsividade: listagens de produtos e fornecedores ganharam visão em cartão para telas
+  estreitas (`renderCard` do `DataTable`), que delega as ações (editar/inativar) para a página
+  de detalhe — Categorias manteve rolagem horizontal da tabela, porque não tem página de
+  detalhe para onde delegar as ações em cartão, e removê-las do cartão tiraria a função de
+  ADMIN/MANAGER no celular.
+
+### 18.20.3 Endpoints consumidos
+
+Todos os 20 endpoints de produtos/categorias/fornecedores/dashboard do mapa de telas
+(§18.3): `GET/POST/PATCH /categories[/:id][/status]` (5), `GET/POST/PATCH
+/suppliers[/:id][/status]` + `GET /suppliers/:id/products` (6), `GET/POST/PATCH
+/products[/:id][/status]` + `GET /products/:id/movements` (6), `GET /dashboard/summary`,
+`/movements-chart`, `/recent-movements` (3).
+
+### 18.20.4 Arquivos criados ou modificados
+
+Novos: `lib/pagination.ts`, `lib/query-keys.ts`, `lib/query-error.ts`,
+`lib/use-debounced-value.ts`, `components/ui/tabs.tsx`, `features/categories/*` (api, schemas,
+queries, componente de formulário, página, teste), `features/suppliers/*` (idem + página de
+detalhe), `features/products/*` (idem + páginas de edição e detalhe), `features/dashboard/api.ts`,
+`queries.ts`, `components/MovementsChart.tsx`, `pages/DashboardPage.test.tsx`.
+Modificados: `components/shared/DataTable.tsx` (+teste, modo `server`), `router.tsx` (rotas
+reais substituindo os placeholders), `lib/nav-items.ts` (`deliveredInPhase: null`),
+`features/dashboard/pages/DashboardPage.tsx` (dado real), `test/render.tsx` (+
+`renderWithProviders`, `createTestQueryClient`), `test/setup.ts` (polyfill de
+`hasPointerCapture`/`scrollIntoView`, exigido pelo Radix `Select` em jsdom),
+`frontend/package.json`/`package-lock.json` (`recharts` 3.10.1).
+
+### 18.20.5 Testes executados e resultados
+
+**191 testes de frontend, todos passando** (148 do Marco 6A + 4 do modo `server` do
+`DataTable` + 39 novos deste marco: 8 categorias, 12 fornecedores, 16 produtos — incluindo os
+dois testes dedicados a provar que `currentStock` nunca é enviado, nem no `POST` nem no
+`PATCH`, e que o campo SKU fica desabilitado na edição — 6 dashboard). Cobertos: listagem,
+busca com debounce, filtros, paginação e ordenação pelo servidor; cadastro e edição com
+validação Zod espelhando os limites reais do DTO (incluindo o padrão de CNPJ/CPF e os
+decimais de 3/4 casas); erro de API (`CATEGORY_HAS_PRODUCTS`, `CONFLICT`, erro genérico)
+exibido como mensagem compreensível, sem perder o formulário preenchido; RBAC ocultando
+criação/edição/inativação para OPERATOR; invalidação do React Query após mutação; dashboard
+com dado real simulado só no teste; estados de carregamento/vazio/erro em toda tela;
+formatação decimal (nunca `Number()`) e de data em pt-BR; ausência de `currentStock` editável;
+toda a suíte de autenticação do Marco 6A, sem regressão.
+
+**Backend, executado de verdade nesta revisão** (não assumido): `npm run test` → **199/199**;
+`npm run test:int` → **461/461** (17 arquivos; as linhas `TE001` no log são falha injetada de
+propósito por teste de resiliência, não erro real). `git status` do diretório `backend/`
+permanece vazio antes e depois — nenhum arquivo tocado.
+
+### 18.20.6 Evidência da integração real (backend + PostgreSQL via Docker)
+
+Validado no navegador, logado como `gerente@stockflow.local` (MANAGER) e depois
+`operador@stockflow.local` (OPERATOR), contra o backend e o PostgreSQL reais:
+
+- Categorias, fornecedores e produtos carregam da API, com paginação e filtros reais
+  (confirmado por `read_page`/`get_page_text`, não só captura de tela).
+- Criado um produto de teste (`TEST-6B-002`) pela interface: SKU enviado em minúsculas,
+  devolvido em maiúsculas pelo backend (`trimUpperValue`) — confirma que a normalização é do
+  servidor, a interface não precisa replicá-la. Produto inativado em seguida pela própria
+  interface, para não deixar dado de teste poluindo a base de desenvolvimento.
+- Detalhe de produto: aba Histórico mostrando movimentações reais (tipo, motivo, saldo após,
+  responsável); categoria e fornecedor resolvidos pelo nome, não só pelo id.
+- Detalhe de fornecedor: produtos vinculados reais via `GET /suppliers/:id/products`; edição
+  inline testada (valores pré-preenchidos corretos, cancelada sem gravar para não alterar
+  dado do seed).
+- Dashboard: os 4 indicadores com valores reais (42 produtos ativos, 65 movimentações em 30
+  dias, 7 em estoque baixo, 6 sem estoque no momento da validação), gráfico renderizado com
+  barras reais por tipo, lista de movimentações recentes com produto/quantidade/autor reais.
+- RBAC confirmado nos dois sentidos: a interface oculta criar/editar/inativar para OPERATOR
+  nas três telas de cadastro (confirmado por leitura do DOM, não só visual); e, independente
+  da interface, uma chamada direta `POST /products` com token de OPERATOR foi tentada por
+  `curl` e o servidor recusou com `403` — a interface nunca é a única barreira.
+- Responsividade verificada em 375px, 768px e 1440px: produtos e fornecedores mudam para
+  cartão abaixo de `sm`, sem rolagem horizontal; categorias mantêm tabela com rolagem
+  horizontal (razão em §18.20.2); dashboard empilha os indicadores em coluna única no celular.
+
+Nenhuma credencial, token ou cookie foi exposto nesta documentação ou em qualquer saída de
+terminal.
+
+### 18.20.7 Qualidade
+
+`eslint .` sem erros; `tsc -b --noEmit` (o do build, com `exactOptionalPropertyTypes`) sem
+erros — corrigidas 6 ocorrências onde um valor `boolean | undefined` ou uma função opcional
+eram atribuídos a uma prop opcional sem o spread condicional que a flag exige (mesma classe de
+problema já documentada no Marco 6A); `vite build` concluído (bundle principal cresceu de 714kB
+para 1165kB só por causa do `recharts`, esperado); `prettier --check` limpo em todos os
+arquivos deste marco; `npm audit` → 0 vulnerabilidades nos três projetos (raiz, backend,
+frontend); varredura de segredos no diff completo → limpa.
+
+**Aborto do Node 24/Windows: ocorreu na auditoria final, antes do versionamento.** Na primeira
+execução de `npm run test:int` desta rodada, o worker de `rbac.int-spec.ts` saiu com o código
+`3221226505` (`0xC0000409`/`STATUS_STACK_BUFFER_OVERRUN`) — a mesma assinatura de `abort()`
+nativo já investigada e documentada desde `docs/16-relatorio-fase-4.md §16.7` (Node 24.15.0 +
+libuv neste Windows, taxa intermitente de ~10%, reproduzida até em um script Node sem nada
+deste repositório). Uma segunda execução, sem nenhuma mudança, terminou limpa: 461/461. Os dois
+resultados ficam registrados aqui, não só o segundo — `backend/` tem zero arquivo alterado por
+este marco, então o abort não é uma regressão desta revisão, e **não está "corrigido"**: é a
+pendência aberta de `16.7`, que continua aberta.
+
+- `DataTableSkeleton` usa "Carregando `<legenda>`" como nome acessível do `<table>` — um teste
+  que espera pela tabela carregada precisa do nome exato, não só `role: 'table'`, ou resolve
+  cedo demais no esqueleto. Corrigido nos testes de produtos e fornecedores.
+- `getByLabelText('Nome')`/`('SKU')` falhavam porque o rótulo do `FormField` concatena
+  `*(obrigatório)` ao texto — o mesmo padrão já visto no Marco 6A (`LoginPage.test.tsx` usa
+  regex por isso). Corrigido para `/^nome/i`/`/^sku/i`, consistente com a convenção existente.
+- `vi.mocked(fetch).mockImplementation` ordenado por sequência de chamada, em vez de por URL,
+  quebrou quando duas consultas paralelas (`/categories` + `/products`) não chegavam na ordem
+  assumida pelo teste. Corrigido despachando por URL, não por posição — mais robusto a mudanças
+  futuras na ordem de disparo dos hooks.
+- `Select` do Radix lança `hasPointerCapture is not a function` em jsdom (API real de
+  navegador, ausente no ambiente de teste) — corrigido com um polyfill mínimo em
+  `test/setup.ts`, reaproveitado por todo teste futuro que abra um `Select`.
+- Seis erros de `exactOptionalPropertyTypes` só visíveis no `tsc -b` do build (não no `tsc
+--noEmit` solto): `isActive: boolean | undefined` atribuído a um parâmetro `isActive?:
+boolean`, e `onClearFilters: (() => void) | undefined` atribuído a uma prop opcional.
+  Corrigidos com spread condicional (`...(valor !== undefined ? {...} : {})`), igual ao padrão
+  já estabelecido no Marco 6A para o mesmo tipo de erro.
+
+### 18.20.9 Limitações e pendências
+
+- Categorias mantêm rolagem horizontal da tabela em tela estreita, por não ter página de
+  detalhe própria para onde delegar as ações do cartão (razão completa em §18.20.2) — não é
+  um descumprimento do critério de responsividade, é uma escolha registrada: a alternativa
+  (cartão sem ação nenhuma) seria pior para ADMIN/MANAGER no celular.
+- `DataTable` ganhou um modo `server`, mas a ordenação por coluna só foi conectada de fato na
+  tela de produtos (a única com `sort` exposto na API e na interface); categorias e
+  fornecedores ordenam sempre por nome, porque suas telas não expõem controle de ordenação —
+  não é uma lacuna, é escopo: nenhuma tela perdeu uma funcionalidade que deveria ter.
+- Marcos 6C (movimentações, inventários, relatórios, usuários/auditoria) e Fase 7 continuam
+  não iniciados, aguardando esta aprovação.
+
+### 18.20.10 Critérios de aceite do 6B (§18.18) — status
+
+"CRUD completo de categoria, fornecedor e produto pela interface, com os quatro estados em
+cada tela; dashboard com os 4 indicadores, gráfico de 30 dias e últimas movimentações, todos
+com dado real (ou estado vazio real, nunca número inventado)": todos verificados, por teste
+automatizado e por validação manual contra o backend e o PostgreSQL reais. Pronto para
+revisão e aprovação explícita antes de qualquer commit.
