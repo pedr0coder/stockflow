@@ -997,3 +997,192 @@ cada tela; dashboard com os 4 indicadores, gráfico de 30 dias e últimas movime
 com dado real (ou estado vazio real, nunca número inventado)": todos verificados, por teste
 automatizado e por validação manual contra o backend e o PostgreSQL reais. Pronto para
 revisão e aprovação explícita antes de qualquer commit.
+
+## 18.21 Marco 6C — resultados reais (implementado, validado, aguardando revisão)
+
+Autorização recebida exclusivamente para o Marco 6C: movimentações, inventários, relatórios,
+usuários e auditoria, contra a API real — o último marco de negócio da Fase 6. Nenhum módulo
+de negócio do backend foi alterado; nenhuma migration foi executada. Nada foi commitado.
+
+### 18.21.1 Diagnóstico inicial
+
+Os cinco domínios foram conferidos direto no código-fonte do backend (controllers, DTOs,
+regras de serviço), não assumidos a partir de `docs/05-api.md`. Única divergência encontrada:
+`docs/05-api.md §5.10` documenta `GET /reports/movements?type=&dateFrom=&dateTo=`, mas
+`MovementsReportQueryDto` não tem campo `type` — só `dateFrom`/`dateTo`. Um `type` enviado
+seria simplesmente ignorado pelo servidor. Registrado aqui; a tela não implementa um filtro
+que a API não suporta.
+
+Achados que moldaram a implementação:
+
+- **Entrada/saída usam `quantity`; ajuste usa `finalQuantity`** — campos diferentes, semântica
+  diferente (delta vs. saldo final absoluto). Confundir os dois identicamente teria sido um
+  bug silencioso, não um erro de tipo.
+- **Matriz tipo→motivo** (`IN`: `PURCHASE`/`RETURN_IN`/`PRODUCTION_IN`/`TRANSFER_IN`; `OUT`:
+  `SALE`/`CONSUMPTION`/`LOSS`/`EXPIRY`/`TRANSFER_OUT`; `ADJUSTMENT`: só `CORRECTION`) é regra
+  de serviço, não do DTO — replicada no Zod da tela para feedback imediato, mas quem decide de
+  fato continua sendo o backend (`INVALID_TYPE_REASON`, 422, se a combinação for inválida).
+- **`InventoryItemDto` não tem nome/SKU do produto** — só `productId`. Resolvido por item, via
+  `useProductQuery` (React Query cacheia uma vez por produto, mesmo que ele apareça em mais de
+  um inventário), em vez de pré-carregar o catálogo inteiro.
+- **Os seis relatórios devolvem array simples, sem paginação** — confirmado direto nos
+  controllers, não assumido por semelhança com o resto da API. `DataTable` sem `server` ==
+  pagina a resposta inteira no cliente, correto aqui.
+- **Usuários: escrita é ADMIN apenas**, nas quatro rotas (`POST`, `PATCH`, `/role`, `/status`)
+  — MANAGER só lê. A instrução do marco dizia "conforme ADMIN e MANAGER"; o contrato real é
+  mais estrito, e a tela segue o contrato real, não a frase.
+- **Auditoria é só leitura por desenho** — nenhuma rota de escrita existe no controller.
+
+### 18.21.2 Telas e fluxos implementados
+
+- **Movimentações** (`/movements`, `/movements/new`): histórico paginado com filtro por
+  produto/tipo/motivo/período; lançamento de entrada, saída e ajuste manual (aba própria,
+  oculta para OPERATOR) em abas, com o motivo filtrado pelo tipo selecionado.
+- **Inventários** (`/inventories`, `/new`, `/:id`): lista com filtro de situação; abertura com
+  busca incremental de produto e contador 0–200; contagem por item (com recontagem); envio
+  para aprovação; aprovação (ADMIN/MANAGER) com o delta calculado inteiramente pelo servidor;
+  cancelamento, com o histórico de contagem preservado.
+- **Relatórios** (`/reports`): seletor filtrado por papel (os três primeiros para todos;
+  inventários/divergências para ADMIN/MANAGER; reconciliação só ADMIN), cada um com estado de
+  carregamento/vazio/erro próprio.
+- **Usuários** (`/users`, `/new`, `/:id`): lista e detalhe para ADMIN/MANAGER; cadastro, edição
+  de nome/e-mail, troca de papel e ativação/inativação restritas a ADMIN.
+- **Auditoria** (`/audit`, ADMIN apenas): lista com filtro por ação/entidade, painel de
+  detalhe mostrando o estado anterior e posterior em JSON, somente leitura.
+
+### 18.21.3 Endpoints consumidos
+
+Os 27 endpoints restantes do mapa de telas (§18.3): movimentações (5), inventários (7),
+relatórios (6), usuários (7, incluindo `/role` e `/status`) e auditoria (2) — completando os
+53 endpoints do mapa inteiro entre os três marcos.
+
+### 18.21.4 Arquivos criados ou modificados
+
+Novos: `features/stock-movements/*` (api, schemas, queries, formulários de entrada/saída e
+ajuste, páginas de lista e lançamento, com teste), `features/inventories/*` (idem, incluindo
+`InventoryCountCell`/`InventoryProductCell`), `features/reports/*`, `features/users/*`,
+`features/audit/*`, `features/products/components/ProductPicker.tsx` (busca de produto
+reaproveitada por movimentações e inventários).
+Modificados: `router.tsx` (rotas reais, com `RoleGuard` preservado em `/users` e novo em
+`/audit`), `lib/nav-items.ts` (`deliveredInPhase: null`), `lib/query-keys.ts` (chaves dos
+cinco novos domínios), `features/products/pages/ProductDetailPage.tsx` (+teste — correção
+descrita em §18.21.8).
+
+### 18.21.5 Testes executados e resultados
+
+**235 testes de frontend, todos passando** (191 dos Marcos 6A/6B + 44 novos deste marco: 6
+lançamento de movimentação, 4 histórico de movimentações, 4 abertura de inventário, 7 detalhe
+de inventário — contagem, aprovação, 409 de saldo insuficiente, `movedSinceCount` destacado,
+cancelamento, estado terminal, RBAC —, 4 lista de inventários, 4 relatórios, 4+4+3 usuários,
+4 auditoria). Cobertos: entrada/saída válidas; saldo insuficiente (409, com
+`available`/`requested`); produto inativo (409); ajuste permitido (A/M) e sua ausência para
+OPERATOR; quantidade zero rejeitada antes da API; histórico e filtros; abertura e contagem de
+inventário, com o limite de 200 refletido na tela; envio, aprovação e cancelamento; 409
+(`INSUFFICIENT_STOCK` na aprovação) e 422; `movedSinceCount` destacado visualmente, com texto
+explicando o motivo; cache invalidado após mutação (produto, dashboard, inventário); RBAC de
+OPERATOR/MANAGER/ADMIN em cada tela; usuários (criação, validação de senha, troca de papel,
+conflito de e-mail) e auditoria (filtro, detalhe JSON somente leitura); relatórios com estado
+vazio real, nunca número inventado; toda a suíte de autenticação dos Marcos 6A/6B, sem
+regressão.
+
+**Backend, executado de verdade nesta revisão** (não assumido): `npm run test` → **199/199**;
+`npm run test:int` → **461/461** (17 arquivos; linhas `TE001` são falha injetada de propósito,
+não erro real — nesta rodada específica, sem abort do Node 24/Windows, ao contrário da
+auditoria final do Marco 6B, onde um abort ocorreu e foi documentado). `git status` do
+diretório `backend/` permanece vazio antes e depois — nenhum arquivo tocado.
+
+### 18.21.6 Evidência da integração real (backend + PostgreSQL via Docker)
+
+Validado no navegador, logado como `admin@stockflow.local`, contra o backend e o PostgreSQL
+reais:
+
+- **Ciclo completo de inventário**: aberto `INV-2026-0001` com 2 produtos reais pela tela;
+  contados (um com divergência deliberada de -1,592 em relação ao esperado); enviado para
+  aprovação (status mudou para "Aguardando aprovação", campos de contagem viraram somente
+  leitura); aprovado — o saldo do produto foi ajustado de 13,592 para 12,000, **confirmado no
+  detalhe do produto depois de recarregar a página** (não só na resposta da mutação); o
+  histórico do produto passou a mostrar a movimentação `ADJUSTMENT`/`INVENTORY_ADJUSTMENT`
+  gerada pela aprovação, com o saldo após igual ao novo saldo.
+- **Lançamento de entrada real**: produto buscado por nome, quantidade e motivo preenchidos,
+  submetido — saldo do produto subiu de 8,592 para 13,592, confirmado na tela do produto.
+- **RBAC confirmado nos dois sentidos**: a interface, logada como ADMIN, mostra os controles
+  de ajuste/aprovação/cancelamento; e, independente da interface, duas chamadas diretas por
+  `curl` com token de OPERATOR — `POST /inventories` (abrir) e `POST
+/stock-movements/adjustment` (ajuste manual) — foram recusadas pelo servidor com `403`.
+- **Relatórios**: "Estoque baixo" com produtos e déficit reais; "Reconciliação de estoque"
+  (ADMIN apenas) retornou vazio — tratado como estado vazio real, sem inventar linha.
+- **Usuários**: lista com os três papéis reais e último acesso real; detalhe de um usuário
+  (Carla Operadora) com os controles de papel/situação visíveis para ADMIN.
+- **Auditoria**: o evento `INVENTORY_APPROVED` gerado pela própria aprovação testada apareceu
+  na lista em tempo real, com o painel de detalhe mostrando o JSON exato dos ajustes aplicados
+  (`productId`, `appliedDelta`) — prova de que o rastro de auditoria é gerado pelo backend, não
+  simulado pela interface.
+- **Responsividade**: formulário de movimentação e detalhe de inventário verificados em
+  375px — a tabela de itens do inventário (6 colunas, com campo de contagem editável e selo de
+  `movedSinceCount`) usa rolagem horizontal dentro do cartão, mesmo padrão já aceito para
+  Categorias no Marco 6B (tabela densa com ações inline, sem alternativa limpa de cartão).
+
+Nenhuma credencial, token ou cookie foi exposto nesta documentação ou em qualquer saída de
+terminal.
+
+### 18.21.7 Qualidade
+
+`eslint .` sem erros; `tsc -b --noEmit` (o do build) sem erros — corrigidas mais algumas
+ocorrências de `exactOptionalPropertyTypes` (um `reason: undefined` explícito em
+`defaultValues` do React Hook Form, um `values: objeto | undefined` passado a `useForm`, e o
+genérico de `renderReport` sem o `extends RowData` que `DataTableColumn` exige — mesma classe
+de erro já documentada nos Marcos 6A/6B, sempre resolvida com spread condicional ou tipagem
+mais precisa, nunca com `as any`); `vite build` concluído; `prettier --check` limpo em todos os
+arquivos deste marco; `npm audit` → 0 vulnerabilidades nos três projetos; varredura de
+segredos no diff completo → limpa (as duas ocorrências de `password` encontradas são uma
+assinatura de tipo e uma string de teste obviamente falsa, não um segredo real).
+
+### 18.21.8 Bugs encontrados e corrigidos durante a validação
+
+- **`ProductDetailPage` (Marco 6B) mostrava o motivo da movimentação cru** (`PURCHASE`, não
+  "Compra") na aba Histórico — a tela foi escrita antes de `REASON_LABEL` existir. Corrigido
+  para reaproveitar o mesmo mapa que a tela de movimentações usa, encontrado só ao validar o
+  ciclo de inventário de ponta a ponta no navegador (a tabela de movimentações, escrita já
+  com o mapa disponível, nunca teve o problema). Teste pré-existente desta tela atualizado
+  para a tradução correta.
+- **`InventoryCountCell` mostrava a quantidade contada sem formatação pt-BR** (`8.000` em vez
+  de `8,000`) quando o item não é mais editável (fora de `OPEN`/`COUNTING`) — o campo editável
+  mostra o que a pessoa digita, sem reformatar, mas o modo somente leitura esqueceu de passar
+  pelo `formatQuantity` que o resto do projeto usa sempre. Encontrado pelo teste de detalhe de
+  inventário, não pela validação manual (a diferença é sutil o bastante para passar
+  despercebida numa leitura rápida de tela).
+- `DataTableSkeleton` usa "Carregando `<legenda>`" como nome acessível — um padrão de teste já
+  visto no Marco 6B, repetido aqui nos testes de inventário/movimentação que esperam a tabela
+  carregada por nome exato, não só por `role: 'table'`.
+- `ProductPicker` dispara sua própria busca em `/products` assim que monta (pré-carrega as
+  primeiras opções), em paralelo com a busca principal da tela — os testes de telas que usam o
+  seletor de produto (movimentações, inventários) despacham o mock por URL, não por ordem de
+  chamada, pela mesma razão já estabelecida no Marco 6B para categorias/fornecedores em
+  paralelo com produtos.
+
+### 18.21.9 Limitações e pendências
+
+- O relatório de movimentações não tem filtro por `type` na tela, porque o endpoint real não
+  aceita esse parâmetro (divergência de `docs/05-api.md` registrada em §18.21.1) — não é uma
+  lacuna da interface, é o contrato real.
+- A tabela de itens do inventário usa rolagem horizontal em tela estreita, pela mesma razão
+  documentada para Categorias no Marco 6B: ações inline (campo de contagem editável) não cabem
+  bem num cartão sem perder função.
+- `GET /audit/:entity/:entityId` (o endpoint de auditoria por entidade, acessível a
+  ADMIN/MANAGER) tem o wrapper de API e a query pronta (`useAuditForEntityQuery`), mas não foi
+  conectado a uma tela própria — o mapa de telas agrupa as duas rotas de auditoria na mesma
+  `/audit`, e essa é ADMIN-only; um MANAGER que tivesse acesso só ao endpoint por entidade não
+  tem hoje um caminho de UI até ele. Registrado como pendência, não implementado por estar fora
+  do que o mapa de telas prevê para este marco.
+- Fase 7 (E2E, divisão de bundle, dark mode, dependência de segurança formal) continua não
+  iniciada, como em todo o resto da Fase 6.
+
+### 18.21.10 Critérios de aceite do 6C — status
+
+Todos os nove fluxos listados na autorização — registrar entrada/saída, ajuste manual,
+histórico, abrir inventário, contar, enviar, aprovar/cancelar, relatórios, administrar
+usuários, consultar auditoria — foram verificados pela interface real contra o backend e o
+PostgreSQL reais, sem o frontend calcular ou aplicar saldo em nenhum momento: a aprovação de
+inventário e as três mutações de movimentação sempre leem o resultado que o servidor
+calculou e devolveu, nunca o reconstroem no cliente. Pronto para revisão e aprovação explícita
+antes de qualquer commit.
