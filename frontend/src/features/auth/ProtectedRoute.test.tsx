@@ -20,8 +20,8 @@ function renderAt(route: string, auth: { user: AuthUser | null; isLoading?: bool
     user: auth.user,
     isLoading: auth.isLoading ?? false,
     isAuthenticated: auth.user !== null,
+    signIn: () => Promise.resolve(),
     signOut: () => undefined,
-    isPreview: false,
   };
 
   render(

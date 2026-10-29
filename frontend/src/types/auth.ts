@@ -34,23 +34,28 @@ export interface AuthUser {
 /**
  * Contrato do provedor de autenticação.
  *
- * Esta é a forma **final**, que a Fase 6 vai implementar contra a API real. Na
- * Fase 3 existe uma implementação de pré-visualização de interface
- * (`ui-preview-auth.tsx`) que satisfaz este mesmo contrato sem autenticar
- * ninguém. Trocar uma pela outra não deve exigir mudança em nenhum consumidor.
+ * Forma final, implementada pela Fase 6 (`features/auth/auth-provider.tsx`) contra a API
+ * real. Até a Fase 5, existiu uma implementação de pré-visualização de interface
+ * (`ui-preview-auth.tsx`, removida nesta fase) que satisfazia um contrato parecido sem
+ * autenticar ninguém — o campo `isPreview` que a distinguia saiu daqui porque não há mais
+ * nada para distinguir.
  */
 export interface AuthContextValue {
   user: AuthUser | null;
-  /** Verdadeiro enquanto a sessão ainda não foi determinada. */
+  /** Verdadeiro enquanto a sessão ainda não foi determinada (boot: refresh + /me em andamento). */
   isLoading: boolean;
   /** Verdadeiro quando há sessão. */
   isAuthenticated: boolean;
-  signOut: () => void;
   /**
-   * Identifica a implementação de pré-visualização.
-   *
-   * Existe para que a interface possa declarar com honestidade que não há
-   * backend por trás. Sai do contrato quando a autenticação real entrar.
+   * Autentica contra `POST /auth/login`. Lança `ApiError` em credencial
+   * inválida — quem chama decide a mensagem (a tela de login, com contexto).
    */
-  isPreview: boolean;
+  signIn: (email: string, password: string) => Promise<void>;
+  /**
+   * Encerra a sessão local e revoga no servidor. Nunca lança: mesmo se
+   * `POST /auth/logout` falhar (rede fora do ar), a sessão LOCAL sempre
+   * encerra — o cookie no servidor expira pelo próprio TTL se a chamada não
+   * chegou.
+   */
+  signOut: () => void;
 }

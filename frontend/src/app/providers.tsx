@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { Tooltip } from 'radix-ui';
 import { Toaster } from '@/components/ui/sonner';
-import { UiPreviewAuthProvider } from '@/features/auth/ui-preview-auth';
+import { AuthProvider } from '@/features/auth/auth-provider';
 
 /**
  * Providers da aplicação.
@@ -56,10 +56,10 @@ export function AppProviders({ children }: { children: ReactNode }): ReactNode {
   return (
     <QueryClientProvider client={queryClient}>
       <Tooltip.Provider delayDuration={300}>
-        <UiPreviewAuthProvider>
+        <AuthProvider>
           {children}
           <Toaster position="bottom-right" richColors closeButton />
-        </UiPreviewAuthProvider>
+        </AuthProvider>
       </Tooltip.Provider>
     </QueryClientProvider>
   );

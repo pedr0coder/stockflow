@@ -1,40 +1,38 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
-import { AuthContext, UiPreviewContext } from '@/features/auth/auth-context';
+import { AuthContext } from '@/features/auth/auth-context';
+import { ApiError } from '@/lib/api-client';
 import { LoginPage } from './LoginPage';
 import type { AuthContextValue } from '@/types/auth';
 
 /**
- * A tela de login da Fase 3 valida de verdade e **não autentica**.
- *
- * O caso que mais importa aqui é "submeter não cria sessão": é a diferença
- * entre uma tela honesta e uma simulação de autenticação.
+ * A tela de login é real: valida com Zod e, ao submeter com sucesso, chama
+ * `signIn` de verdade (via `AuthProvider`, injetado aqui como duplo). O que
+ * mais importa provar é o que a Fase 3 já provava (nenhuma sessão fictícia),
+ * só que agora pelo caminho contrário: a sessão É criada quando a credencial
+ * é válida, e NÃO é criada quando é rejeitada.
  */
-const SEM_SESSAO: AuthContextValue = {
-  user: null,
-  isLoading: false,
-  isAuthenticated: false,
-  signOut: () => undefined,
-  isPreview: true,
-};
-
-function renderLogin() {
-  const startPreview = vi.fn();
-  const setPreviewRole = vi.fn();
+function renderLogin(signIn: AuthContextValue['signIn'] = vi.fn()) {
+  const value: AuthContextValue = {
+    user: null,
+    isLoading: false,
+    isAuthenticated: false,
+    signIn,
+    signOut: () => undefined,
+  };
 
   render(
-    <MemoryRouter>
-      <AuthContext value={SEM_SESSAO}>
-        <UiPreviewContext value={{ startPreview, setPreviewRole }}>
-          <LoginPage />
-        </UiPreviewContext>
+    <MemoryRouter initialEntries={['/login']}>
+      <AuthContext value={value}>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/dashboard" element={<p>conteúdo do dashboard</p>} />
+        </Routes>
       </AuthContext>
     </MemoryRouter>,
   );
-
-  return { startPreview };
 }
 
 describe('LoginPage', () => {
@@ -85,50 +83,77 @@ describe('LoginPage', () => {
         'Informe o e-mail.',
       );
     });
+
+    it('não chama signIn quando o formulário é inválido', async () => {
+      const signIn = vi.fn();
+      const user = userEvent.setup();
+      renderLogin(signIn);
+
+      await user.click(screen.getByRole('button', { name: 'Entrar' }));
+      await screen.findByText('Informe o e-mail.');
+
+      expect(signIn).not.toHaveBeenCalled();
+    });
   });
 
-  describe('honestidade', () => {
-    it('NÃO cria sessão ao submeter credenciais válidas', async () => {
+  describe('autenticação real', () => {
+    it('chama signIn com e-mail normalizado e senha, e navega ao dashboard', async () => {
+      const signIn = vi.fn().mockResolvedValue(undefined);
       const user = userEvent.setup();
-      const { startPreview } = renderLogin();
+      renderLogin(signIn);
 
-      await user.type(screen.getByRole('textbox', { name: /e-mail/i }), 'ana@empresa.com');
+      await user.type(screen.getByRole('textbox', { name: /e-mail/i }), 'Ana@Empresa.com');
       await user.type(screen.getByLabelText(/^senha/i), 'uma-senha-valida');
       await user.click(screen.getByRole('button', { name: 'Entrar' }));
 
-      // Nenhuma sessão, de nenhum tipo, é criada pelo formulário.
-      expect(startPreview).not.toHaveBeenCalled();
+      expect(signIn).toHaveBeenCalledWith('ana@empresa.com', 'uma-senha-valida');
+      expect(await screen.findByText('conteúdo do dashboard')).toBeInTheDocument();
     });
 
-    it('declara que a autenticação ainda não existe', async () => {
+    it('credencial inválida (401) mostra mensagem específica, sem navegar', async () => {
+      const signIn = vi.fn().mockRejectedValue(new ApiError(401, 'INVALID_CREDENTIALS', 'x'));
       const user = userEvent.setup();
-      renderLogin();
+      renderLogin(signIn);
+
+      await user.type(screen.getByRole('textbox', { name: /e-mail/i }), 'ana@empresa.com');
+      await user.type(screen.getByLabelText(/^senha/i), 'uma-senha-errada');
+      await user.click(screen.getByRole('button', { name: 'Entrar' }));
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('E-mail ou senha incorretos.');
+      expect(screen.queryByText('conteúdo do dashboard')).not.toBeInTheDocument();
+    });
+
+    it('falha de rede ou servidor mostra mensagem genérica, não a mensagem de credencial', async () => {
+      const signIn = vi.fn().mockRejectedValue(new Error('falha de rede'));
+      const user = userEvent.setup();
+      renderLogin(signIn);
 
       await user.type(screen.getByRole('textbox', { name: /e-mail/i }), 'ana@empresa.com');
       await user.type(screen.getByLabelText(/^senha/i), 'uma-senha-valida');
       await user.click(screen.getByRole('button', { name: 'Entrar' }));
 
-      expect(await screen.findByRole('status')).toHaveTextContent(
-        /autenticação ainda não foi implementada/i,
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'Não foi possível entrar. Tente novamente.',
       );
     });
 
-    it('a pré-visualização é um caminho separado e nomeado', () => {
-      renderLogin();
-
-      const secao = screen.getByRole('region', { name: /visualizar a interface \(sem backend\)/i });
-
-      expect(secao).toHaveTextContent(/não autentica ninguém/i);
-      expect(secao).toHaveTextContent(/não exibe dado real/i);
-    });
-
-    it('inicia a pré-visualização apenas pelo botão próprio', async () => {
+    it('desabilita o botão de submit durante o envio', async () => {
+      let resolveSignIn: () => void = () => undefined;
+      const signIn = vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveSignIn = resolve;
+          }),
+      );
       const user = userEvent.setup();
-      const { startPreview } = renderLogin();
+      renderLogin(signIn);
 
-      await user.click(screen.getByRole('button', { name: /visualizar interface/i }));
+      await user.type(screen.getByRole('textbox', { name: /e-mail/i }), 'ana@empresa.com');
+      await user.type(screen.getByLabelText(/^senha/i), 'uma-senha-valida');
+      await user.click(screen.getByRole('button', { name: 'Entrar' }));
 
-      expect(startPreview).toHaveBeenCalledWith('OPERATOR');
+      expect(await screen.findByRole('button', { name: /entrando/i })).toBeDisabled();
+      resolveSignIn();
     });
   });
 

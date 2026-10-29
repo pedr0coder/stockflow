@@ -1,45 +1,31 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Eye, EyeOff, Info } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
-import { useNavigate } from 'react-router';
+import { useLocation, useNavigate } from 'react-router';
 import { FormField } from '@/components/shared/FormField';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
-import { useUiPreview } from '@/features/auth/auth-context';
+import { useAuth } from '@/features/auth/auth-context';
 import { loginSchema, type LoginFormValues } from '@/features/auth/schemas';
-import { ROLE_LABEL, USER_ROLES, type UserRole } from '@/types/auth';
+import { ApiError } from '@/lib/api-client';
 
 /**
  * Tela de login.
  *
- * O formulário é real: valida com Zod, mostra erro junto ao campo e bloqueia
- * envio inválido. O que ele **não** faz é autenticar, porque não existe
- * autenticação ainda (Fase 4) nem integração (Fase 6).
- *
- * Em vez de fingir, a tela diz o que acontece. Submeter exibe uma mensagem
- * declarando que a autenticação ainda não existe, e quem quiser ver a
- * interface usa o bloco separado logo abaixo, nomeado como pré-visualização.
- *
- * A alternativa seria aceitar qualquer credencial e criar uma sessão, que é
- * exatamente o tipo de simulação que este projeto não faz.
+ * Formulário real: valida com Zod, mostra erro junto ao campo, bloqueia
+ * envio inválido e, ao submeter, chama `POST /auth/login` de verdade
+ * (`AuthProvider.signIn`). A pré-visualização de interface da Fase 3 foi
+ * removida nesta fase, como `docs/14-relatorio-fase-3.md §14.10.3` já previa.
  */
 export function LoginPage(): ReactNode {
   const navigate = useNavigate();
-  const { startPreview } = useUiPreview();
+  const location = useLocation();
+  const { signIn } = useAuth();
 
   const [showPassword, setShowPassword] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-  const [previewRole, setPreviewRoleChoice] = useState<UserRole>('OPERATOR');
+  const [formError, setFormError] = useState<string | null>(null);
 
   const {
     register,
@@ -53,9 +39,28 @@ export function LoginPage(): ReactNode {
     mode: 'onBlur',
   });
 
-  function onValidSubmit(): void {
-    // Nenhuma sessão é criada aqui. Ver o comentário no topo do arquivo.
-    setSubmitted(true);
+  async function onValidSubmit(values: LoginFormValues): Promise<void> {
+    setFormError(null);
+
+    try {
+      await signIn(values.email, values.password);
+
+      // `location.state.from` vem do `ProtectedRoute`: quem tentou abrir uma
+      // rota protegida sem sessão volta exatamente para onde ia, em vez de
+      // sempre cair no dashboard.
+      const state = location.state as { from?: string } | null;
+      await navigate(state?.from ?? '/dashboard', { replace: true });
+    } catch (error) {
+      // 401 de credencial errada é o caminho esperado aqui — nunca um erro
+      // não tratado. Qualquer outro problema (rede, 500) usa a mesma
+      // mensagem genérica: a tela de login não distingue "e-mail não existe"
+      // de "senha errada" (docs/08-seguranca.md, não permitir enumeração).
+      setFormError(
+        error instanceof ApiError && error.status === 401
+          ? 'E-mail ou senha incorretos.'
+          : 'Não foi possível entrar. Tente novamente.',
+      );
+    }
   }
 
   return (
@@ -119,99 +124,22 @@ export function LoginPage(): ReactNode {
           </FormField>
 
           {/* Botão desabilitado durante o envio, para impedir duplo submit
-              (§6.4). */}
+              (§6.4) — reduz o acidente do mesmo clique, não é garantia de
+              requisição única (docs/18-plano-fase-6.md §18.9). */}
           <Button type="submit" disabled={isSubmitting} className="w-full">
-            Entrar
+            {isSubmitting ? 'Entrando…' : 'Entrar'}
           </Button>
 
-          {submitted ? (
+          {formError !== null ? (
             <p
-              role="status"
-              className="rounded-(--radius-md) border border-(--color-warning)/30 bg-(--color-warning)/10 px-3 py-2 text-xs text-(--color-warning)"
+              role="alert"
+              className="rounded-(--radius-md) border border-(--color-danger)/30 bg-(--color-danger)/10 px-3 py-2 text-xs text-(--color-danger)"
             >
-              A autenticação ainda não foi implementada. Ela é entrega da Fase 4, e a ligação com a
-              API é da Fase 6. Nenhuma sessão foi criada.
+              {formError}
             </p>
           ) : null}
         </form>
-
-        <Separator />
-
-        <PreviewAccess
-          role={previewRole}
-          onRoleChange={setPreviewRoleChoice}
-          onStart={() => {
-            startPreview(previewRole);
-            void navigate('/dashboard');
-          }}
-        />
       </CardContent>
     </Card>
-  );
-}
-
-/**
- * ┌──────────────────────────────────────────────────────────────────────────┐
- * │ SERÁ DELETADO NA FASE 6, junto com o provider de pré-visualização.       │
- * └──────────────────────────────────────────────────────────────────────────┘
- *
- * Entrada para a pré-visualização da interface.
- *
- * Separado do formulário por um divisor, com rótulo próprio e explicação do
- * que é. Não há como confundir com o botão de entrar.
- */
-function PreviewAccess({
-  role,
-  onRoleChange,
-  onStart,
-}: {
-  role: UserRole;
-  onRoleChange: (role: UserRole) => void;
-  onStart: () => void;
-}): ReactNode {
-  return (
-    <section aria-labelledby="preview-title" className="flex flex-col gap-3">
-      <div className="flex items-start gap-2">
-        <Info aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-        <div className="flex flex-col gap-1">
-          <h2 id="preview-title" className="text-sm font-medium">
-            Visualizar a interface (sem backend)
-          </h2>
-          <p className="text-xs text-muted-foreground">
-            Navega pelo design system da Fase 3. Não autentica ninguém, não consulta a API e não
-            exibe dado real. Recarregar a página volta para cá.
-          </p>
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <div className="flex-1">
-          <label htmlFor="preview-role-login" className="sr-only">
-            Papel para a pré-visualização
-          </label>
-          <Select
-            value={role}
-            onValueChange={(value) => {
-              onRoleChange(value as UserRole);
-            }}
-          >
-            <SelectTrigger id="preview-role-login" className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {USER_ROLES.map((item) => (
-                <SelectItem key={item} value={item}>
-                  {ROLE_LABEL[item]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <Button type="button" variant="outline" onClick={onStart}>
-          Visualizar interface
-        </Button>
-      </div>
-    </section>
   );
 }

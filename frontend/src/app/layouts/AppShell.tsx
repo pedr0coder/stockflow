@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Outlet, useLocation } from 'react-router';
 import { Header } from '@/components/layout/Header';
-import { PreviewBanner } from '@/components/layout/PreviewBanner';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { useAuth } from '@/features/auth/auth-context';
 
@@ -15,7 +14,7 @@ import { useAuth } from '@/features/auth/auth-context';
  * `Outlet` troca.
  */
 export function AppShell(): ReactNode {
-  const { user, isPreview } = useAuth();
+  const { user } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -43,8 +42,6 @@ export function AppShell(): ReactNode {
 
   return (
     <div className="flex min-h-dvh flex-col">
-      {isPreview ? <PreviewBanner /> : null}
-
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
           role={user.role}

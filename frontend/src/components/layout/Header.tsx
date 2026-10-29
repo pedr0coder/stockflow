@@ -10,15 +10,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { useAuth, useUiPreview } from '@/features/auth/auth-context';
-import { ROLE_LABEL, USER_ROLES, type UserRole } from '@/types/auth';
+import { useAuth } from '@/features/auth/auth-context';
+import { ROLE_LABEL } from '@/types/auth';
 
 export interface HeaderProps {
   collapsed: boolean;
@@ -30,11 +23,10 @@ export interface HeaderProps {
  * Cabeçalho da aplicação.
  *
  * Contém o controle de colapso da sidebar, o gatilho do drawer em tela
- * estreita, o menu do usuário e, enquanto a Fase 3 durar, o seletor de papel da
- * pré-visualização.
+ * estreita e o menu do usuário.
  */
 export function Header({ collapsed, onToggleCollapse, onOpenMobileNav }: HeaderProps): ReactNode {
-  const { user, signOut, isPreview } = useAuth();
+  const { user, signOut } = useAuth();
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-2 border-b bg-background px-3 sm:px-4">
@@ -67,8 +59,6 @@ export function Header({ collapsed, onToggleCollapse, onOpenMobileNav }: HeaderP
       </Button>
 
       <div className="flex-1" />
-
-      {isPreview ? <PreviewRoleSelect /> : null}
 
       {user ? (
         <DropdownMenu>
@@ -104,50 +94,5 @@ export function Header({ collapsed, onToggleCollapse, onOpenMobileNav }: HeaderP
         </DropdownMenu>
       ) : null}
     </header>
-  );
-}
-
-/**
- * Seletor de papel da pré-visualização.
- *
- * ┌──────────────────────────────────────────────────────────────────────────┐
- * │ SERÁ DELETADO NA FASE 6.                                                 │
- * └──────────────────────────────────────────────────────────────────────────┘
- *
- * Trocar o papel aqui **não concede permissão nenhuma**: muda apenas quais
- * itens a sidebar mostra, que é o comportamento de interface entregue nesta
- * fase. É também como esse comportamento fica demonstrável sem backend.
- */
-function PreviewRoleSelect(): ReactNode {
-  const { user } = useAuth();
-  const { setPreviewRole } = useUiPreview();
-
-  if (!user) {
-    return null;
-  }
-
-  return (
-    <div className="flex items-center gap-2">
-      <label htmlFor="preview-role" className="hidden text-xs text-muted-foreground sm:inline">
-        Ver como
-      </label>
-      <Select
-        value={user.role}
-        onValueChange={(value) => {
-          setPreviewRole(value as UserRole);
-        }}
-      >
-        <SelectTrigger id="preview-role" size="sm" className="w-36">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {USER_ROLES.map((role) => (
-            <SelectItem key={role} value={role}>
-              {ROLE_LABEL[role]}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
   );
 }
