@@ -103,6 +103,24 @@ export interface DataTableProps<TData extends RowData> {
   renderCard?: (row: TData) => ReactNode;
   pageSize?: number;
   className?: string;
+  /**
+   * Paginação e ordenação controladas pelo servidor (Marco 6B em diante).
+   *
+   * Por padrão, a tabela pagina e ordena o array `data` inteiro no cliente —
+   * correto quando `data` é o conjunto completo (como nas telas sem API real
+   * da Fase 3). Quando `data` é só UMA página vinda do servidor, `data.length`
+   * não é o total: passar `server` troca a paginação interna por uma
+   * controlada por fora (`pageIndex`/`pageCount` vêm da resposta paginada da
+   * API, `onPageChange`/`onSortingChange` disparam a busca da próxima
+   * página/ordenação) em vez de reordenar/repaginar a página já recortada.
+   */
+  server?: {
+    pageIndex: number;
+    pageCount: number;
+    onPageChange: (pageIndex: number) => void;
+    sorting?: SortingState;
+    onSortingChange?: (sorting: SortingState) => void;
+  };
 }
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -118,12 +136,42 @@ export function DataTable<TData extends RowData>({
   renderCard,
   pageSize = DEFAULT_PAGE_SIZE,
   className,
+  server,
 }: DataTableProps<TData>): ReactNode {
-  const [sorting, setSorting] = useState<SortingState>([]);
-  const [pagination, setPagination] = useState<PaginationState>({
+  const [localSorting, setLocalSorting] = useState<SortingState>([]);
+  const [localPagination, setLocalPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize,
   });
+
+  const sorting = server?.sorting ?? localSorting;
+  const pagination: PaginationState = server
+    ? { pageIndex: server.pageIndex, pageSize }
+    : localPagination;
+
+  function handleSortingChange(
+    updater: SortingState | ((old: SortingState) => SortingState),
+  ): void {
+    const next = typeof updater === 'function' ? updater(sorting) : updater;
+
+    if (server?.onSortingChange) {
+      server.onSortingChange(next);
+    } else {
+      setLocalSorting(next);
+    }
+  }
+
+  function handlePaginationChange(
+    updater: PaginationState | ((old: PaginationState) => PaginationState),
+  ): void {
+    const next = typeof updater === 'function' ? updater(pagination) : updater;
+
+    if (server) {
+      server.onPageChange(next.pageIndex);
+    } else {
+      setLocalPagination(next);
+    }
+  }
 
   /**
    * Cópias memoizadas de `columns` e `data`.
@@ -142,8 +190,9 @@ export function DataTable<TData extends RowData>({
     data: tableData,
     getRowId,
     state: { sorting, pagination },
-    onSortingChange: setSorting,
-    onPaginationChange: setPagination,
+    onSortingChange: handleSortingChange,
+    onPaginationChange: handlePaginationChange,
+    ...(server ? { pageCount: server.pageCount, manualPagination: true, manualSorting: true } : {}),
   });
 
   if (state.status === 'loading') {

@@ -278,4 +278,49 @@ describe('DataTable', () => {
       expect(screen.getByText('card A-001')).toBeInTheDocument();
     });
   });
+
+  describe('paginação e ordenação controladas pelo servidor (Marco 6B)', () => {
+    it('usa pageCount do servidor, não data.length, para decidir quantas páginas existem', () => {
+      // Uma única página de 3 linhas, mas o servidor diz que há 5 páginas no
+      // total — se a tabela calculasse pelo tamanho do array, mostraria 1.
+      renderTable({ server: { pageIndex: 0, pageCount: 5, onPageChange: vi.fn() } });
+
+      expect(screen.getByText(/página 1 de 5/i)).toBeInTheDocument();
+    });
+
+    it('clicar em "próxima" chama onPageChange em vez de paginar o array local', async () => {
+      const onPageChange = vi.fn();
+      const user = userEvent.setup();
+      renderTable({ server: { pageIndex: 0, pageCount: 5, onPageChange } });
+
+      await user.click(screen.getByRole('button', { name: /próxima/i }));
+
+      expect(onPageChange).toHaveBeenCalledWith(1);
+      // A página exibida não avança sozinha: quem decide é o pai, ao refazer a
+      // busca com o novo pageIndex e passar novos dados/pageIndex de volta.
+      expect(screen.getByText(/página 1 de 5/i)).toBeInTheDocument();
+    });
+
+    it('reflete o pageIndex que o pai controla, não um estado interno', () => {
+      renderTable({ server: { pageIndex: 2, pageCount: 5, onPageChange: vi.fn() } });
+
+      expect(screen.getByText(/página 3 de 5/i)).toBeInTheDocument();
+    });
+
+    it('clicar em ordenar chama onSortingChange em vez de ordenar o array local', async () => {
+      const onSortingChange = vi.fn();
+      const user = userEvent.setup();
+      renderTable({
+        server: { pageIndex: 0, pageCount: 1, onPageChange: vi.fn(), sorting: [], onSortingChange },
+      });
+
+      await user.click(screen.getByRole('button', { name: /produto/i }));
+
+      expect(onSortingChange).toHaveBeenCalledWith([{ id: 'nome', desc: false }]);
+      // A ordem visual das linhas não muda sozinha: a lista vem de `data`,
+      // que só o pai re-busca ordenada do servidor.
+      const rows = screen.getAllByRole('row').slice(1);
+      expect(within(rows[0]!).getByText('Carrinho')).toBeInTheDocument();
+    });
+  });
 });
