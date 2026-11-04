@@ -7,5 +7,13 @@
        acusaria esses arquivos como fora da raiz. O build compila apenas `src`. */
     "rootDir": "./src"
   },
-  "exclude": ["node_modules", "dist", "test", "prisma", "**/*.spec.ts", "**/*.int-spec.ts"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "test",
+    "prisma",
+    "scripts",
+    "**/*.spec.ts",
+    "**/*.int-spec.ts"
+  ]
 }

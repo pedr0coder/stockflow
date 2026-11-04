@@ -10,7 +10,16 @@ import prettier from 'eslint-config-prettier';
  * React somado.
  */
 export default tseslint.config(
-  { ignores: ['dist/**', 'coverage/**', 'node_modules/**', 'src/components/ui/**'] },
+  {
+    ignores: [
+      'dist/**',
+      'coverage/**',
+      'node_modules/**',
+      'playwright-report/**',
+      'test-results/**',
+      'src/components/ui/**',
+    ],
+  },
 
   js.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
@@ -70,6 +79,19 @@ export default tseslint.config(
     // Arquivo de configuração: ESM, fora do tsconfig, sem regra type-aware.
     files: ['eslint.config.js'],
     extends: [tseslint.configs.disableTypeChecked],
+  },
+
+  {
+    // Suíte E2E (Marco 7A): roda em Node, não no navegador, e informa
+    // progresso de preparação do ambiente no terminal — saída esperada, não
+    // log perdido.
+    files: ['e2e/**/*.ts', 'playwright.config.ts'],
+    languageOptions: {
+      globals: { ...globals.node },
+    },
+    rules: {
+      'no-console': 'off',
+    },
   },
 
   prettier,
