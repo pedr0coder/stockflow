@@ -184,6 +184,111 @@ jobs:
         run: npm run build
 
   # ─────────────────────────────────────────────────────────────────────────
+  # E2E (Marco 7A, docs/19-plano-fase-7.md §19.5). Depende de `backend` e
+  # `frontend` já terem passado: é o job mais caro do pipeline, e não faz
+  # sentido gastar ~1min subindo browser e dois servidores reais se o lint ou
+  # o typecheck já reprovaram.
+  #
+  # O banco deste serviço é efêmero e existe só durante o job — mas o nome
+  # "stockflow_e2e" é mantido de propósito igual ao do ambiente local: é
+  # exatamente essa string que `selectE2eDatabaseUrl`
+  # (frontend/e2e/global-setup.ts) exige conter "e2e", a mesma trava que
+  # protege o ambiente local contra apontar, por engano, para outro banco.
+  # ─────────────────────────────────────────────────────────────────────────
+  e2e:
+    name: E2E
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: stockflow
+          POSTGRES_PASSWORD: ci_only_not_a_real_secret
+          POSTGRES_DB: stockflow_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U stockflow -d stockflow_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Consumidas por `global-setup.ts` (que monta o `DATABASE_URL` dos
+      # processos filhos) e por `playwright.config.ts` (que sobe backend e
+      # frontend reais). `DATABASE_URL`/`DATABASE_URL_TEST` ficam de fora de
+      # propósito: sem elas definidas, a trava de igualdade de
+      # `selectE2eDatabaseUrl` não tem contra o que comparar, e isso é
+      # seguro — o único banco que existe neste job É o E2E.
+      DATABASE_URL_E2E: postgresql://stockflow:ci_only_not_a_real_secret@localhost:5432/stockflow_e2e?schema=public
+      JWT_SECRET: ci_access_secret_com_mais_de_32_caracteres_000
+      JWT_REFRESH_SECRET: ci_refresh_secret_com_mais_de_32_caracteres_111
+      JWT_ACCESS_TTL: 15m
+      JWT_REFRESH_TTL: 7d
+      LOG_LEVEL: warn
+      # Senhas dos usuários fictícios do seed (prisma/seed.ts) — mesma
+      # política de 10+ caracteres de docs/08-seguranca.md §8.1, só não é
+      # segredo real: existe apenas durante este job, num banco efêmero.
+      SEED_ADMIN_PASSWORD: ci-apenas-admin-000
+      SEED_MANAGER_PASSWORD: ci-apenas-gerente-000
+      SEED_OPERATOR_PASSWORD: ci-apenas-operador-000
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      # As duas instalações são necessárias: `global-setup.ts` roda o CLI do
+      # Prisma e o seed de dentro de `backend/`; `playwright.config.ts` sobe
+      # o servidor Nest e o Vite de dentro de cada pasta.
+      - name: Instalar dependências do backend
+        working-directory: backend
+        run: npm ci
+
+      - name: Gerar Prisma Client
+        working-directory: backend
+        run: npm run prisma:generate
+
+      - name: Instalar dependências do frontend
+        working-directory: frontend
+        run: npm ci
+
+      # Só Chromium, igual ao ambiente local — nenhum motivo para pagar o
+      # tempo de baixar Firefox/WebKit numa suíte que não os usa.
+      # `--with-deps` instala também as bibliotecas de sistema do runner.
+      - name: Instalar navegador do Playwright
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Testes E2E
+        working-directory: frontend
+        run: npm run test:e2e
+
+      # Só em falha: trace, screenshot e o relatório HTML (que embute os
+      # dois) — nada disso aparece no log do job, só fica disponível para
+      # quem baixar o artefato, e só quem tem acesso ao repositório consegue
+      # baixá-lo. Nenhum destes arquivos contém token, cookie ou senha em
+      # texto puro: o Playwright grava cabeçalho de autorização redigido por
+      # padrão, e nenhum script deste projeto imprime segredo no log.
+      - name: Publicar evidência de falha (trace, screenshots, relatório)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          retention-days: 7
+
+  # ─────────────────────────────────────────────────────────────────────────
   # Formatação é verificada uma vez, na raiz, porque o Prettier é um só para o
   # repositório inteiro.
   # ─────────────────────────────────────────────────────────────────────────
