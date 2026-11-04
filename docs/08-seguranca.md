@@ -56,10 +56,18 @@ Dois guards globais, nesta ordem: `JwtAuthGuard` → `RolesGuard`.
 createAdjustment(@Body() dto: CreateAdjustmentDto, @CurrentUser() user: AuthUser) { }
 ```
 
-Decisões:
+Decisões (duas regras distintas, cada uma com seu próprio "padrão negar"):
 
-- O padrão é **negar**. Rota sem `@Roles` exige autenticação; rota pública precisa de
-  `@Public()` explícito. Esquecer o decorator fecha a rota, não a abre.
+- **Autenticação:** toda rota exige token válido, a menos que leve `@Public()`
+  explícito. Esquecer o `@Public()` fecha a rota a quem não está autenticado — não a
+  abre. Usado em exatamente três lugares: login e as duas rotas de saúde.
+- **Papel:** dentro de uma rota já autenticada, `@Roles(...)` ausente significa "basta
+  estar autenticado", não "qualquer `@Roles` serve" — é um nível de exigência válido por
+  si, não uma omissão. Quem precisa de mais restrição declara o papel explicitamente.
+  Esta distinção está testada de três formas complementares (`roles.guard.spec.ts`,
+  `rbac.int-spec.ts`, e o inventário exaustivo de rotas em
+  `common/guards/route-authorization.spec.ts`, Marco 7A/S10), para que uma rota nova sem
+  nenhum dos dois decorators nunca passe despercebida.
 - A verificação está no **backend**. Esconder o item da sidebar é conveniência de UI, não
   segurança: a API é chamável diretamente, e a matriz de RBAC da §7.4 é testada por
   requisição real com token de cada papel.
