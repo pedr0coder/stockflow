@@ -81,6 +81,7 @@ export default defineConfig({
       timeout: 30_000,
       env: {
         ...process.env,
+        VITE_API_URL: process.env['VITE_API_URL'] ?? '/api/v1',
         VITE_PROXY_TARGET: `http://localhost:${String(BACKEND_PORT)}`,
       },
     },

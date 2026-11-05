@@ -1,4 +1,11 @@
-import type { APIRequestContext } from '@playwright/test';
+import {
+  expect,
+  type APIRequestContext,
+  type ConsoleMessage,
+  type Page,
+  type Request,
+  type Response,
+} from '@playwright/test';
 
 /**
  * Fixtures criadas pela API real, nunca por `INSERT` direto no banco.
@@ -31,6 +38,118 @@ export function seedPasswordFor(email: string): string {
   }
 
   return password;
+}
+
+/**
+ * Remove credenciais em URLs, tokens JWT e senhas conhecidas do seed antes de
+ * registrar qualquer mensagem de diagnóstico em falha de E2E.
+ */
+export function redactDiagnosticText(text: string): string {
+  let sanitized = text
+    .replace(/(:\/\/[^:@/\s]+:)[^@/\s]+(@)/g, '$1***$2')
+    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer [REDACTED]')
+    .replace(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, '[JWT_REDACTED]')
+    .replace(/(password|senha|token|cookie|secret)\s*[:=]\s*[^\s,;)"']+/gi, '$1=[REDACTED]');
+
+  for (const pwd of Object.values(SEED_PASSWORDS)) {
+    if (pwd && pwd.length > 0) {
+      sanitized = sanitized.split(pwd).join('[SEED_PASSWORD_REDACTED]');
+    }
+  }
+
+  return sanitized;
+}
+
+function isDiagnosticRequestUrl(url: string): boolean {
+  return (
+    !url.includes('/node_modules/') &&
+    !url.includes('/@vite') &&
+    !url.includes('/@react-refresh') &&
+    !url.includes('/src/') &&
+    !/\.(?:ts|tsx|js|css|svg|png|ico|woff2?)(?:\?|$)/i.test(url)
+  );
+}
+
+/**
+ * Login pela interface real (`/login` → `/dashboard`) com coleta de evidências
+ * de diagnóstico em caso de falha (URL final, alerta visível, status de
+ * requisições relevantes e erros de console/página, sempre com redação de
+ * dados sensíveis).
+ */
+export async function uiLogin(page: Page, email: string): Promise<void> {
+  const consoleErrors: string[] = [];
+  const relevantRequests: string[] = [];
+
+  const onConsole = (msg: ConsoleMessage): void => {
+    if (msg.type() === 'error') {
+      consoleErrors.push(redactDiagnosticText(msg.text()));
+    }
+  };
+  const onPageError = (err: Error): void => {
+    consoleErrors.push(redactDiagnosticText(err.message));
+  };
+  const onResponse = (res: Response): void => {
+    const url = res.url();
+    if (isDiagnosticRequestUrl(url) || res.status() >= 400) {
+      relevantRequests.push(
+        `${res.request().method()} ${redactDiagnosticText(url)} -> ${String(res.status())}`,
+      );
+    }
+  };
+  const onRequestFailed = (req: Request): void => {
+    const url = req.url();
+    if (isDiagnosticRequestUrl(url)) {
+      const reason = req.failure()?.errorText ?? 'network_error';
+      relevantRequests.push(
+        `${req.method()} ${redactDiagnosticText(url)} -> FALHA (${redactDiagnosticText(reason)})`,
+      );
+    }
+  };
+
+  page.on('console', onConsole);
+  page.on('pageerror', onPageError);
+  page.on('response', onResponse);
+  page.on('requestfailed', onRequestFailed);
+
+  const passwordInput = page.getByLabel(/^Senha/);
+
+  try {
+    await page.goto('/login');
+    await page.getByLabel('E-mail').fill(email);
+    await passwordInput.fill(seedPasswordFor(email));
+    await page.getByRole('button', { name: 'Entrar' }).click();
+    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  } catch (error) {
+    const currentUrl = redactDiagnosticText(page.url());
+    const rawAlert = await page
+      .getByRole('alert')
+      .first()
+      .textContent({ timeout: 500 })
+      .catch(() => null);
+    const visibleAlert = rawAlert ? redactDiagnosticText(rawAlert.trim()) : 'nenhum';
+
+    // Limpa o campo de senha antes de propagar a falha para que o snapshot
+    // automático do Playwright (`error-context.md`) nunca grave a senha em texto puro.
+    await passwordInput.fill('', { timeout: 500 }).catch(() => undefined);
+
+    const originalMessage =
+      error instanceof Error ? redactDiagnosticText(error.message) : String(error);
+
+    throw new Error(
+      `Falha no login E2E para ${email}.\n` +
+        `  URL atual: ${currentUrl}\n` +
+        `  Alerta visível na página: ${visibleAlert}\n` +
+        `  Requisições relevantes: ${relevantRequests.length > 0 ? relevantRequests.join(' | ') : 'nenhuma'}\n` +
+        `  Erros de console/página: ${consoleErrors.length > 0 ? consoleErrors.join(' | ') : 'nenhum'}\n` +
+        `  Erro original: ${originalMessage}`,
+      { cause: error },
+    );
+  } finally {
+    page.off('console', onConsole);
+    page.off('pageerror', onPageError);
+    page.off('response', onResponse);
+    page.off('requestfailed', onRequestFailed);
+  }
 }
 
 export async function apiLogin(request: APIRequestContext, email: string): Promise<ApiSession> {

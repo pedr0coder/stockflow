@@ -4,7 +4,7 @@ import {
   apiCreateEntry,
   apiCreateProduct,
   apiLogin,
-  seedPasswordFor,
+  uiLogin,
   uniqueSuffix,
 } from './helpers/api';
 
@@ -51,11 +51,7 @@ test('inventário: abertura, contagem com divergências, aprovação e ajuste re
   await apiCreateEntry(request, manager, produtoIgual.id, '100.000');
 
   // ── login (MANAGER) ────────────────────────────────────────────────────
-  await page.goto('/login');
-  await page.getByLabel('E-mail').fill('gerente@stockflow.local');
-  await page.getByLabel(/^Senha/).fill(seedPasswordFor('gerente@stockflow.local'));
-  await page.getByRole('button', { name: 'Entrar' }).click();
-  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  await uiLogin(page, 'gerente@stockflow.local');
 
   // ── abre inventário com 3 produtos ────────────────────────────────────
   await page.goto('/inventories/new');

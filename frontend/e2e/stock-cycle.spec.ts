@@ -3,7 +3,7 @@ import {
   apiCreateCategory,
   apiCreateProduct,
   apiLogin,
-  seedPasswordFor,
+  uiLogin,
   uniqueSuffix,
 } from './helpers/api';
 
@@ -36,14 +36,8 @@ test('ciclo de estoque: entrada, saída, histórico e saída negada por saldo in
 
   expect(product.currentStock).toBe('0.000');
 
-  // ── login (OPERATOR) ──────────────────────────────────────────────────
-  await page.goto('/login');
-  await page.getByLabel('E-mail').fill('operador@stockflow.local');
-  await page.getByLabel(/^Senha/).fill(seedPasswordFor('operador@stockflow.local'));
-  await page.getByRole('button', { name: 'Entrar' }).click();
-
-  // ── dashboard carrega indicadores reais ──────────────────────────────
-  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  // ── login (OPERATOR) e carregamento do dashboard real ─────────────────
+  await uiLogin(page, 'operador@stockflow.local');
   await expect(page.getByText('Produtos ativos')).toBeVisible();
 
   // ── produto criado com saldo 0 ────────────────────────────────────────

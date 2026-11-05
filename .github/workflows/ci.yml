@@ -155,6 +155,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: secrets-check
 
+    env:
+      VITE_API_URL: /api/v1
+
     defaults:
       run:
         working-directory: frontend
@@ -228,6 +231,7 @@ jobs:
       JWT_ACCESS_TTL: 15m
       JWT_REFRESH_TTL: 7d
       LOG_LEVEL: warn
+      VITE_API_URL: /api/v1
       # Senhas dos usuários fictícios do seed (prisma/seed.ts) — mesma
       # política de 10+ caracteres de docs/08-seguranca.md §8.1, só não é
       # segredo real: existe apenas durante este job, num banco efêmero.
@@ -272,12 +276,14 @@ jobs:
         working-directory: frontend
         run: npm run test:e2e
 
-      # Só em falha: trace, screenshot e o relatório HTML (que embute os
-      # dois) — nada disso aparece no log do job, só fica disponível para
-      # quem baixar o artefato, e só quem tem acesso ao repositório consegue
-      # baixá-lo. Nenhum destes arquivos contém token, cookie ou senha em
-      # texto puro: o Playwright grava cabeçalho de autorização redigido por
-      # padrão, e nenhum script deste projeto imprime segredo no log.
+      # Só em falha: trace, screenshot e o relatório HTML — nada disso sai no
+      # log público do job (`uiLogin` redige credenciais/tokens nas mensagens
+      # e limpa o input de senha antes de falhar para não expô-la no
+      # `error-context.md` nem no screenshot final). Ressalva residual: o
+      # arquivo `trace.zip` grava eventos de ação e payloads HAR da execução
+      # efêmera (contendo apenas as senhas fictícias `ci-apenas-*-000` e tokens
+      # descartáveis deste runner), restrito a quem tem permissão no repositório
+      # e com retenção curta de 7 dias.
       - name: Publicar evidência de falha (trace, screenshots, relatório)
         if: failure()
         uses: actions/upload-artifact@v4

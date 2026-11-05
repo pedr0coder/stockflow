@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { extractDatabaseName, runGlobalSetup, selectE2eDatabaseUrl } from './global-setup';
+import { redactDiagnosticText } from './helpers/api';
 
 /**
  * Prova a recusa do mecanismo de isolamento do banco E2E com strings
@@ -172,5 +173,22 @@ describe('runGlobalSetup — recusa antes de migrar, truncar ou semear', () => {
       ),
     ).toThrow(/mesmo banco que DATABASE_URL/);
     expect(runner).not.toHaveBeenCalled();
+  });
+});
+
+describe('redactDiagnosticText — redação de dados sensíveis no diagnóstico de login E2E', () => {
+  it('oculta credenciais em URLs, tokens Bearer, JWTs e chaves de senha/token/cookie', () => {
+    const raw =
+      'Falha em https://user:minha_senha_secreta@localhost:3100/api com Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.assinatura e password=segredo_bruto cookie=refresh_123';
+    const sanitized = redactDiagnosticText(raw);
+
+    expect(sanitized).not.toContain('minha_senha_secreta');
+    expect(sanitized).not.toContain('eyJhbGciOiJIUzI1NiJ9');
+    expect(sanitized).not.toContain('segredo_bruto');
+    expect(sanitized).not.toContain('refresh_123');
+    expect(sanitized).toContain('https://user:***@localhost:3100/api');
+    expect(sanitized).toContain('Bearer [REDACTED]');
+    expect(sanitized).toContain('password=[REDACTED]');
+    expect(sanitized).toContain('cookie=[REDACTED]');
   });
 });
