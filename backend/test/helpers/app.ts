@@ -4,6 +4,7 @@ import request from 'supertest';
 import { v7 as uuidv7 } from 'uuid';
 import { AppModule } from '../../src/app.module';
 import { AuthService } from '../../src/auth/auth.service';
+import { TokenService } from '../../src/auth/token.service';
 import { applyNotFoundHandler, configureApp } from '../../src/bootstrap';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { UserRole } from '../../src/generated/prisma/enums';
@@ -66,7 +67,19 @@ export async function createTestApp(): Promise<TestApp> {
     app,
     prisma,
     close: async () => {
+      const server = app.getHttpServer() as {
+        closeIdleConnections?: () => void;
+        closeAllConnections?: () => void;
+      };
+      // Em teardown (`afterAll`), encerramos primeiro apenas conexões ociosas
+      // (`closeIdleConnections`) para jamais interromper requisições em voo
+      // caso alguma ainda esteja drenando. Só após `app.close()` concluir o
+      // ciclo de vida do NestJS e do Prisma chamamos `closeAllConnections()`
+      // para garantir que nenhum descritor residual permaneça aberto entre
+      // os arquivos da suíte sequencial (`singleFork: true`).
+      server.closeIdleConnections?.();
       await app.close();
+      server.closeAllConnections?.();
     },
   };
 }
@@ -180,15 +193,44 @@ export async function login(
   };
 }
 
-/** Cria o usuário e já autentica, que é o caso mais comum nas suítes. */
+/**
+ * Fixture de preparação de cenário: cria o usuário no banco (com `passwordHash`
+ * Argon2id real memorizado) e emite o `accessToken` diretamente via
+ * `TokenService.signAccessToken`.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │ Por que não chamar `POST /api/v1/auth/login` aqui?                       │
+ * │                                                                          │
+ * │ `createSession` é chamado ~894 vezes por execução da suíte de integração │
+ * │ (majoritariamente em blocos `beforeEach`, como os 162 casos × 3 papéis   │
+ * │ de `rbac.int-spec.ts`). Passar por `/api/v1/auth/login` em cada fixture  │
+ * │ executava ~894 verificações nativas `@node-rs/argon2` (19 MiB cada,      │
+ * │ ~17 GiB de alocação nativa acumulada no worker `singleFork`), além de    │
+ * │ ~894 requisições HTTP loopback e ~2.680 escritas extras no banco         │
+ * │ (`refresh_tokens`, `users.lastLoginAt` e `audit_logs`).                  │
+ * │                                                                          │
+ * │ Emitir o JWT pelo `TokenService` real preserva integralmente a validação │
+ * │ de autenticação e autorização nas rotas testadas (`JwtAuthGuard`,        │
+ * │ `JwtStrategy` e `RolesGuard`), enquanto todos os testes que verificam o  │
+ * │ fluxo HTTP real de login, senha, cookies, rotação de refresh token e     │
+ * │ logout (`auth.int-spec.ts`, `security.int-spec.ts`, `users.int-spec.ts`  │
+ * │ e `audit.int-spec.ts`) utilizam `login(app, user)` ou a rota HTTP        │
+ * │ diretamente.                                                             │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ */
 export async function createSession(
   app: NestExpressApplication,
   prisma: PrismaService,
   role: UserRole,
 ): Promise<Session> {
   const user = await createUser(prisma, role);
+  const { token: accessToken } = app.get(TokenService).signAccessToken(user.id, user.role);
 
-  return login(app, user);
+  return {
+    accessToken,
+    refreshCookie: '',
+    user,
+  };
 }
 
 /**

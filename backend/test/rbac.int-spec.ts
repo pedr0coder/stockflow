@@ -476,11 +476,12 @@ describe('RBAC (integração)', () => {
 
     it('mas a renovação com o papel novo fecha a janela', async () => {
       const alvo = await createUser(prisma, UserRole.ADMIN);
-      const sessao = await createSession(app, prisma, UserRole.ADMIN);
+      const usuarioSessao = await createUser(prisma, UserRole.ADMIN);
 
       // O login acontece ANTES de montar a requisição: o supertest abre um
       // listener por requisição, e aninhar uma chamada dentro do encadeamento
       // de outra derruba o endereço da externa.
+      const sessao = await login(app, usuarioSessao);
       const ator = await login(app, alvo);
 
       // Ator distinto do alvo: trocar o próprio papel é recusado, e o caminho

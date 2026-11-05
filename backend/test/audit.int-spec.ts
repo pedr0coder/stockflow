@@ -309,7 +309,8 @@ describe('Auditoria (integração)', () => {
     });
 
     it('logout', async () => {
-      const sessao = await createSession(app, prisma, UserRole.OPERATOR);
+      const usuario = await createUser(prisma, UserRole.OPERATOR);
+      const sessao = await login(app, usuario);
 
       await request(app.getHttpServer())
         .post('/api/v1/auth/logout')
