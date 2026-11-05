@@ -1986,4 +1986,90 @@ Para manter controle rigoroso de escopo e verificação incremental, a execuçã
   - Documentada a limitação de que a medição das 14 consultas via `EXPLAIN (ANALYZE, BUFFERS)` foi realizada em base pequena de desenvolvimento/teste (`46` produtos, `72` movimentações), não demonstrando desempenho sob carga volumosa (nenhum índice ou migration será criado no Marco 7C; eventuais benchmarks com dados sintéticos ficam restritos a ambiente isolado sem operações destrutivas).
 - **Status de execução do Marco 7C**:
   - **Planejamento técnico concluído e aprovado.**
-  - **Implementação das Subetapas `7C.1`, `7C.2` e `7C.3`: pendente (nenhuma alteração de código iniciada neste commit).**
+  - **Subetapa `7C.1` (Performance Frontend e Backend/N+1): concluída, auditada e com suítes unitárias, typecheck, lint e builds 100% aprovados.** Validação de integração/E2E delegada ao GitHub Actions devido à ausência de PostgreSQL no host local.
+  - **Subetapas `7C.2` e `7C.3`: pendentes de autorização.**
+
+---
+
+### 19.18.11 Execução e resultados reais da Subetapa 7C.1 (2026-11-05)
+
+#### 1. Implementações realizadas na Subetapa 7C.1
+
+1. **Frontend — Code-Splitting por rota e isolamento de dependências (`M7C-1` / `D7-6` / `D7-7`)**:
+   - `frontend/src/components/shared/PageLoader.tsx`: componente de carregamento intermediário com semântica de acessibilidade (`role="status"`, `aria-live="polite"` e texto acessível `"Carregando página…"`), renderizado dentro da área de conteúdo de `AppShell`.
+   - `frontend/src/router.tsx`: migração de todas as 22 páginas da aplicação para carregamento sob demanda via `React.lazy` envolvidas por `<Suspense fallback={<PageLoader />}>`. A casca estrutural e de segurança (`AuthLayout`, `AppShell`, `ProtectedRoute` e `RoleGuard`) permanece síncrona no chunk principal, garantindo ausência de flickers e avaliação imediata de sessão/RBAC.
+   - `frontend/src/features/dashboard/pages/DashboardPage.tsx`: isolamento de `MovementsChart` via `React.lazy` com fallback de `<Skeleton className="h-[280px] w-full" />`, desacoplando a biblioteca `recharts` do caminho crítico de renderização dos indicadores e movimentações recentes.
+   - `frontend/vite.config.ts`: configuração de particionamento determinístico via Rolldown `build.rolldownOptions.output.codeSplitting` com `includeDependenciesRecursively: false` e grupos ordenados por prioridade (`vendor-sync`, `vendor-charts`, `vendor-react`, `vendor-forms`, `vendor-query`, `vendor-table`). `react-is` foi encapsulado em `vendor-charts` e `use-sync-external-store` em `vendor-sync`, eliminando qualquer ciclo estático entre chunks e mantendo todos os chunks estritamente abaixo do limite de 500 kB do Vite sem suprimir alertas.
+
+2. **Backend & Frontend — Eliminação do N+1 em Inventários e Otimização de `stockStatus=out` (`M7C-2`)**:
+   - `backend/src/inventories/inventories.sql.ts`: projeção de `p.sku AS product_sku` e `p.name AS product_name` na query `readItemsDetail`, aproveitando o `JOIN products p ON p.id = ii.product_id` preexistente sem introduzir queries adicionais.
+   - `backend/src/inventories/dto/inventory.dto.ts`: inclusão dos campos opcionais `productSku` e `productName` em `InventoryItemDto`, preservando rigorosamente `expectedQty`, `divergence`, `currentStock` e os demais campos preexistentes.
+   - `backend/src/inventories/inventories.service.ts`: mapeamento de `product_sku` e `product_name` para o DTO na leitura de detalhe (`toItemDto`).
+   - `frontend/src/features/inventories/api.ts`: enriquecimento da tipagem `InventoryItem` com `productSku?: string` e `productName?: string`.
+   - `frontend/src/features/inventories/components/InventoryProductCell.tsx`: consumo direto das propriedades do item quando disponíveis, eliminando as chamadas individuais assíncronas `GET /api/v1/products/:id`. O componente `LookupProductCell` foi mantido exclusivamente como fallback seguro para dados legados ou respostas de contagem.
+   - `backend/src/products/products.service.ts`: filtro direto `currentStock: new Prisma.Decimal(0)` para `stockStatus === 'out'`, compondo diretamente com o `WHERE` principal e reduzindo de 3 para 2 queries SQL (`findMany` + `count`). As regras para `low` e `ok` foram preservadas intactas via `idsByStockStatus`.
+
+#### 2. Métricas empíricas de performance antes/depois da Subetapa 7C.1
+
+| Métrica / Dimensão                                                                        | Baseline Marco 7B (`vite build`)                                                | Subetapa 7C.1 (`vite build`)                                                   | Variação / Ganho                                          |
+| :---------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------ | :----------------------------------------------------------------------------- | :-------------------------------------------------------- |
+| **Carga inicial JavaScript (entrada + preloads estáticos)**                               | `1.217,44 kB` minificado (`358,25 kB` gzip)                                     | **`541,89 kB`** minificado (**`172,01 kB`** gzip)                              | **`-55,5%` minificado** (**`-52,0%` gzip**)               |
+| **Maior chunk isolado do bundle**                                                         | `1.217,44 kB` (`dist/assets/index-*.js`)                                        | **`368,32 kB`** (`vendor-charts-*.js`, sob demanda)                            | **`-69,7%`** (abaixo do teto de 500 kB)                   |
+| **Chunks acima do limite de 500 kB**                                                      | 1 chunk (com warning do Vite)                                                   | **0 chunks** (alerta do Vite eliminado sem flags permissivas)                  | **Conforme critério de aceite D7-7**                      |
+| **Presença de `recharts` / `d3-*` na rota inicial (`/login` e `/dashboard` sem gráfico)** | Sim (acoplado no chunk monolítico)                                              | **Não** (`vendor-charts` transferido apenas quando `MovementsChart` renderiza) | Isolado sob demanda                                       |
+| **Ciclos estáticos entre chunks gerados**                                                 | N/A (chunk único)                                                               | **0 ciclos** (verificado via DFS estático no grafo)                            | Grafo estático 100% acíclico                              |
+| **Requisições HTTP ao abrir inventário de 50 itens (`InventoryDetailPage`)**              | 1 (`GET /inventories/:id`) + 50 (`GET /products/:id`) = **51 requisições HTTP** | **1 requisição HTTP** (`GET /inventories/:id` com dados embutidos)             | **`-98,0%` requisições HTTP** (eliminação total do N+1)   |
+| **Queries SQL executadas em `GET /products?stockStatus=out`**                             | 3 queries (`queryRaw` auxiliar de IDs + `findMany` + `count`)                   | **2 queries** (`findMany` + `count` com filtro direto `currentStock = 0`)      | **`-33,3%` consultas SQL** (eliminação da query auxiliar) |
+
+#### 3. Resultados reais dos testes automatizados e verificações
+
+- **Backend Unitário & Arquitetural**: **279 testes passando** em 22 arquivos de teste (`npm --prefix backend run test`, duração `15,21s`).
+  - Inclui novo arquivo `backend/src/products/products.service.spec.ts` com 6 testes validando o filtro direto de `stockStatus=out`, ausência de `$queryRaw`, composição com filtros de categoria, ativo, fornecedor e busca, e manutenção do comportamento de `low`, `ok` e busca sem filtro.
+- **Frontend Unitário & Componentes**: **263 testes passando** em 38 arquivos de teste (`npm --prefix frontend run test`, duração `62,98s`).
+  - Inclui novos testes: `PageLoader.test.tsx` (1 teste), `InventoryProductCell.test.tsx` (3 testes) e novo cenário em `InventoryDetailPage.test.tsx` comprovando ausência de requisições a produtos na carga e após mutação de contagem.
+- **Backend Lint & Typecheck**:
+  - `npm --prefix backend run lint` (`eslint . --max-warnings=0`): 0 erros, 0 warnings.
+  - `npm --prefix backend run typecheck` (`tsc --noEmit`): 0 erros.
+- **Frontend Lint & Typecheck**:
+  - `npm --prefix frontend run lint` (`eslint . --max-warnings=0`): 0 erros, 0 warnings.
+  - `npm --prefix frontend run typecheck` (`tsc -b --noEmit`): 0 erros.
+- **Builds de Produção**:
+  - `npm --prefix backend run build` (`nest build`): build concluído com código 0.
+  - `npm --prefix frontend run build` (`vite build`): build concluído com código 0 em 1,42s, sem warnings de chunk size.
+- **Formatação de Código**:
+  - `npx prettier --check` nos arquivos alterados e novos: 100% formatados.
+- **Verificação de Regressão de Autenticação / RBAC**:
+  - Inspeção e testes confirmaram que `ProtectedRoute` e `RoleGuard` continuam atuando de forma estritamente síncrona, prevenindo vazamento de interface ou bypass de autenticação no router SPA.
+
+#### 4. Limitações operacionais do ambiente e testes pendentes
+
+- **Ambiente de Execução Local**:
+  - Máquina Windows de desenvolvimento sem serviço nativo do PostgreSQL nem runtime Docker instalado no sistema operacional.
+- **Testes Pendentes de Execução**:
+  - Suíte de Integração do Backend: 462 testes de integração (`backend/test/**/*.int-spec.ts`), incluindo os testes atualizados em `inventories.int-spec.ts` e `catalog.int-spec.ts`.
+  - Suíte E2E do Frontend: 2 fluxos Playwright E2E (`frontend/e2e/`).
+- **Postura Técnica e Critério de Aceite**:
+  - Em conformidade estrita com as diretrizes do projeto, **não se declara como aprovado o que não foi executado localmente**. A aprovação da Subetapa 7C.1 neste momento cobre a integridade estática, unitária e de empacotamento, ficando a validação ponta a ponta formal vinculada à execução completa e verde dos jobs de integração e E2E no GitHub Actions CI #14.
+
+#### 5. Inventário de arquivos alterados e novos na Subetapa 7C.1
+
+- **Arquivos modificados (10)**:
+  - `backend/src/inventories/dto/inventory.dto.ts`
+  - `backend/src/inventories/inventories.service.ts`
+  - `backend/src/inventories/inventories.sql.ts`
+  - `backend/src/products/products.service.ts`
+  - `backend/test/catalog.int-spec.ts`
+  - `backend/test/inventories.int-spec.ts`
+  - `frontend/src/features/dashboard/pages/DashboardPage.tsx`
+  - `frontend/src/features/inventories/api.ts`
+  - `frontend/src/features/inventories/components/InventoryProductCell.tsx`
+  - `frontend/src/features/inventories/pages/InventoryDetailPage.test.tsx`
+  - `frontend/src/features/inventories/pages/InventoryDetailPage.tsx`
+  - `frontend/src/router.tsx`
+  - `frontend/vite.config.ts`
+  - `docs/19-plano-fase-7.md`
+- **Arquivos novos (4)**:
+  - `backend/src/products/products.service.spec.ts`
+  - `frontend/src/components/shared/PageLoader.tsx`
+  - `frontend/src/components/shared/PageLoader.test.tsx`
+  - `frontend/src/features/inventories/components/InventoryProductCell.test.tsx`
