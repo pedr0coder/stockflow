@@ -91,10 +91,13 @@ Decisões (duas regras distintas, cada uma com seu próprio "padrão negar"):
 
 ## 8.5 Banco de dados
 
-- **SQL Injection:** todo acesso passa pelo Prisma, que parametriza. Os dois pontos de
-  `$queryRaw` (UPDATE condicional de estoque e reconciliação) usam **template tagged** com
-  parâmetros — nunca concatenação de string. Isso é verificado em code review e é a única
-  exceção auditada ao uso do query builder.
+- **SQL Injection:** todo acesso passa pelo Prisma, que parametriza. Os pontos de `$queryRaw`
+  e `$executeRaw` (operações condicionais de estoque e inventário, agregações do dashboard,
+  relatórios em `*.sql.ts`, rotação atômica de refresh token, inativação condicional de
+  categoria, filtro de status de estoque e `SELECT 1` no health check) usam exclusivamente
+  **template tagged** com parâmetros — nunca concatenação de string nem
+  `$queryRawUnsafe`/`$executeRawUnsafe`. Essa allowlist é verificada automaticamente em
+  `backend/src/architecture.spec.ts`.
 - Usuário do banco da aplicação **não** é superusuário e não tem DDL em produção;
   migrations rodam com credencial separada no deploy.
 - `ON DELETE RESTRICT` em `StockMovement.userId` e `.productId`: autor e produto de uma
@@ -141,9 +144,21 @@ propósito.
   `secret`.
 - `requestId` por requisição, presente no log e na resposta de erro — permite investigar um
   erro relatado pelo usuário sem expor detalhe interno a ele.
-- 5xx registra stack no log; a **resposta** traz apenas mensagem genérica e `requestId`.
+- `AllExceptionsFilter` opera em **allowlist estrita** (Marco 7B / S12): apenas erros de
+  domínio (`DomainError`) expõem sua própria `message` em português; qualquer `HttpException`
+  de framework/biblioteca recebe a mensagem canônica do status HTTP, e 5xx registra stack no
+  log enquanto a resposta traz apenas mensagem genérica e `requestId`.
 - Audit log nunca grava senha, hash, token ou segredo (§4.4), por uma função de redação
-  única e testada.
+  única e testada (`toAuditSnapshot`).
+- **Dois regimes deliberados de gravação de auditoria (Decisão D3 da Fase 5 e Marco 7B / S11):**
+  - `AuditService.record()` (_best-effort_): usado em autenticação e cadastros (Fases 3 e 4).
+    Nunca lança em falha de `INSERT` (loga o erro no Pino sem desfazer a operação já
+    concluída) e é restrito em tempo de compilação e em runtime a `BestEffortAuditAction`.
+  - `AuditService.recordInTransaction(tx, ...)` (transacional): obrigatório para todas as
+    operações de movimentação de estoque e ciclo de inventário (`TransactionalAuditAction`,
+    Fase 5). Executa dentro da mesma transação do saldo e do movimento, exige autor explícito
+    e **propaga** qualquer falha para reverter toda a transação (garantido também pelo teste
+    arquitetural `RG-6` em `backend/src/architecture.spec.ts`).
 - Audit log é somente leitura pela API, restrito a ADMIN.
 
 **Limitação registrada:** o audit log é gravado no mesmo banco que ele audita. Um ADMIN com

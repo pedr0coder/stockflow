@@ -554,10 +554,15 @@ código, dependência ou configuração foi alterada para produzir este document
 
 ---
 
-## 19.16 Marco 7A — resultados reais (implementado e validado, aguardando autorização de versionamento)
+## 19.16 Marco 7A — resultados reais (concluído, publicado em `origin/main` no commit `3c9f052` e aprovado no CI)
 
-> Nenhum commit nem push foi feito. Esta seção documenta o que foi implementado e
-> verificado nesta sessão, para revisão antes do versionamento.
+> **Status atualizado em 2026-11-05:** O Marco 7A foi oficialmente versionado e publicado em
+> `origin/main` na sequência de commits `064cfbb..fa6fc47`, seguido do commit corretivo de CI
+> `3c9f052` (`fix(ci): configure frontend api base for playwright e2e`, que adicionou
+> `VITE_API_URL=/api/v1` no job `e2e` do GitHub Actions e em `frontend/playwright.config.ts`,
+> além de diagnóstico explícito em `uiLogin`). A execução CI #12 do commit `3c9f052` no GitHub
+> Actions foi confirmada 100% verde em todos os 5 jobs (`secrets-check`, `backend`, `frontend`,
+> `format` e `e2e`). O registro original da implementação é preservado integralmente abaixo.
 
 ### 19.16.1 Qualidade de código
 
@@ -702,10 +707,890 @@ negócio, nenhuma mudança de regra transacional de estoque.
 - **CSRF / `Origin`/`Referer`** (D7-4) — decisão adiada para quando a topologia de deploy da
   Fase 8 for conhecida, conforme já registrado.
 - **D7-1, D7-5, D7-6, D7-7, D7-8** — todos adiados conforme aprovado, nenhum tocado.
-- **Job de E2E no CI** — configurado e validado localmente, mas **não confirmado em execução
-  real do GitHub Actions**. Essa confirmação só existe depois de um push autorizado.
+- **Job de E2E no CI** — configurado e validado localmente, e posteriormente **confirmado 100%
+  verde no GitHub Actions** no commit `3c9f052` (CI #12), após a adição de
+  `VITE_API_URL=/api/v1` no workflow e no `playwright.config.ts`.
 - Acessibilidade sistemática (axe/Lighthouse), performance (code-splitting, baseline de
   bundle) e responsividade — escopo do Marco 7C, nada antecipado.
 
-**Aguardando autorização explícita para commit e push.** Nenhuma ação de versionamento foi
-tomada.
+**Marco 7A oficialmente encerrado no commit `3c9f052`.**
+
+---
+
+## 19.17 Planejamento técnico detalhado do Marco 7B — Estabilidade, Segurança e Robustez
+
+> **Histórico de aprovação (2026-11-05):** Planejamento revisado e aprovado pelo responsável com as
+> decisões **D7B-1: Opção A** (aceitar temporariamente e documentar os 13 avisos `moderate` de
+> `minimatch` em `devDependencies`, sem `overrides` cross-major e sem `npm audit fix --force`) e
+> **D7B-2: Opção A** (escopo completo do Marco 7B: `M7B-1`, `M7B-2`, `M7B-3` e `M7B-4`), incorporando
+> os 7 ajustes obrigatórios do plano registrados abaixo.
+
+### 19.17.1 Estado inicial verificado
+
+| Item                     | Valor verificado                                                                                                  |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| Diretório                | `C:\Users\pedro\Desktop\dev\stockflow`                                                                            |
+| Branch / `HEAD`          | `main` / `3c9f052` (`3c9f05242f7113a64ab57a4992d01c0c1148e3c5`)                                                   |
+| Sincronização `origin`   | `0 ahead / 0 behind` em relação a `origin/main`                                                                   |
+| CI do `HEAD` (`3c9f052`) | 100% verde no GitHub Actions (`secrets-check`, `backend`, `frontend`, `format`, `e2e`)                            |
+| Runtime local            | Node.js `v24.15.0` (Windows_NT 10.0.26200 x64), npm `11.12.1`                                                     |
+| Test runner / ORM        | `vitest@5.0.5`, `prisma@7.10.1`, `@prisma/adapter-pg@7.10.1`, `pg@8.20.0`                                         |
+| Migrations aplicadas     | 3 (`20261017071012_init`, `20261027000000_phase5a_stock_integrity`, `20261028000000_phase5b_inventory_integrity`) |
+
+---
+
+### 19.17.2 Prioridade P0 — Diagnóstico da instabilidade do Vitest em Node 24/Windows (`exit code 3221226505` / `0xC0000409`)
+
+#### 1. Ambiente, versões e binários nativos
+
+- **Runtime local**: `node.exe` `v24.15.0` (linha _Current_, V8 13.6, `libuv 1.51.0`, UCRT do
+  Windows 11 build 26200).
+- **Addons nativos `.node` carregados em `backend/node_modules`**:
+  - `@node-rs/argon2-win32-x64-msvc` (`2.0.5`) — hash/verificação Argon2id (19 MiB, $t=2$, $p=1$).
+  - `@swc/core-win32-x64-msvc` (`1.15.3`, via `unplugin-swc@1.5.9`) — transpilação TS e metadados
+    de decorators nos workers.
+  - `@rolldown/binding-win32-x64-msvc` e `lightningcss-win32-x64-msvc` — internos do Vite/Vitest.
+- **Driver de banco**: `@prisma/adapter-pg@7.10.1` + `pg@8.20.0` (JavaScript puro sobre
+  `node:net` / `node:tls`, sem binário Rust de query engine no runtime dos testes).
+
+#### 2. Natureza do código de saída, momento da falha e enquadramento como hipótese técnica
+
+- `3221226505` (inteiro sem sinal de 32 bits) corresponde exatamente a **`0xC0000409`**
+  (`STATUS_STACK_BUFFER_OVERRUN` / `__fastfail(FAST_FAIL_FATAL_APP_EXIT)` no UCRT do Windows).
+- Pela inspeção do código do `PoolRunner` do Vitest 5.0.5
+  (`backend/node_modules/vitest/dist/chunks/index.1TqnEahn.js:5384-5390`), a mensagem emitida em
+  todas as ocorrências históricas (`Worker exited unexpectedly with exit code 3221226505 during
+STARTED state while running test file ...`) comprova que o abort ocorre **no meio da execução do
+  arquivo de teste (`RunnerState.STARTED`)**, e **não** durante `RunnerState.STOPPING` (teardown
+  do worker).
+- Na bisseção realizada na Fase 4 (`docs/16-relatorio-fase-4.md §16.7`), o mesmo `0xC0000409`
+  foi reproduzido no Windows em um script Node `24.15.0` mínimo utilizando **apenas `node:http`**
+  (`http.createServer` + centenas de requisições loopback em `127.0.0.1` + `server.close()`), sem
+  Vitest, sem SWC, sem NestJS, sem Prisma e sem `@node-rs/argon2`. No CI Linux (`ubuntu-latest`,
+  Node 24), a taxa de ocorrência é **0%** em todas as execuções do projeto.
+- **Ajuste obrigatório #1 (Hipótese técnica vs. causa raiz comprovada)**: Na ausência de um crash
+  dump nativo simbolizado do `node.exe` (`WER LocalDumps` / pilha C++ do `libuv` / `ntdll`), a
+  relação entre `0xC0000409`, `libuv`, reciclagem de sockets loopback e o runtime Node 24 no
+  Windows deve ser tratada estritamente como **hipótese técnica fundamentada em evidências
+  indiretas**, e **não** como causa raiz definitivamente comprovada.
+
+#### 3. Amplificadores estruturais identificados na suíte de integração (`backend/test/`)
+
+A leitura direta de `backend/test/helpers/app.ts`, `backend/src/auth/auth.service.ts` e das 17
+suítes `.int-spec.ts` revelou fatores que aumentavam desnecessariamente o custo de preparação de
+cenários (`beforeEach`) e o volume de operações nativas/HTTP por execução:
+
+1. **Amplificador P0-A — Custo de `POST /api/v1/auth/login` e `Argon2id.verify()` em `createSession`
+   (`backend/test/helpers/app.ts:184-192`)**:
+   - Embora `createUser(prisma, role)` já memorizasse o hash Argon2id de `TEST_PASSWORD` uma vez
+     por processo (`hashDaSenhaDeTeste()`, linhas 116–122), `createSession(app, prisma, role)`
+     invocava `login(app, user)` (`POST /api/v1/auth/login`).
+   - Cada chamada a `login(app, user)` abria uma requisição HTTP loopback via `supertest`,
+     executava `AuthService.login()` — que chama `verify(user.passwordHash, password)` no addon
+     nativo `@node-rs/argon2` (alocando 19 MiB por verificação) — e realizava 3 escritas adicionais
+     no banco (`refresh_tokens`, `users.lastLoginAt` e `audit_logs` com `LOGIN_SUCCESS`).
+   - A contagem exata nas 17 suítes de integração mostra **~894 chamadas a `createSession` por
+     execução completa de `npm run test:int`** (sendo ~489 apenas em `rbac.int-spec.ts`, 108 em
+     `stock-movements.int-spec.ts`, 87 em `inventories.int-spec.ts`, 54 em `catalog.int-spec.ts`,
+     34 em `audit.int-spec.ts`, 30 em `users.int-spec.ts`, 24 em `reports.int-spec.ts`, 20 em
+     `not-found.int-spec.ts`, 16 em `security.int-spec.ts`, 14 em `atomicity.int-spec.ts`, 10 em
+     `duplicates.int-spec.ts` e 8 em `concurrency.int-spec.ts`). Isso representava **~894
+     verificações nativas Argon2id (~17 GiB de alocação acumulada)**, **~894 requisições HTTP
+     loopback** e **~2.682 escritas extras no PostgreSQL** apenas para preparar fixtures.
+   - **Ajustes obrigatórios #2 e #3 (Mapeamento dos testes que dependem de login HTTP real e uso
+     de JWT direto apenas como fixture)**:
+     - **`auth.int-spec.ts` (29 testes)**: **não** utiliza `createSession`; todos os 29 testes
+       chamam `createUser` + `login(app, user)` ou `POST /api/v1/auth/login` diretamente, cobrindo
+       100% do fluxo HTTP de login, verificação Argon2id, cookies `HttpOnly`, rotação e detecção
+       de reúso de refresh token, logout e `/auth/me`.
+     - **`security.int-spec.ts`**: todos os testes de força bruta, rate limit, tamanho de payload e
+       credenciais inválidas chamam `POST /api/v1/auth/login` diretamente.
+     - **`users.int-spec.ts`**: todos os testes de login após troca de senha, bloqueio de usuário
+       inativo e revogação de refresh token na troca de papel (linhas 235, 287, 308, 334, 372, 388,
+       421, 422, 460) já chamam `login(app, usuario)` diretamente.
+     - **`audit.int-spec.ts` e `rbac.int-spec.ts`**: em todo o repositório, apenas **2 testes**
+       chamavam `createSession` e liam `sessao.refreshCookie`: `audit.int-spec.ts:312` (`it('logout')`)
+       e `rbac.int-spec.ts:479` (`it('mas a renovação com o papel novo fecha a janela')`). Ambos
+       foram ajustados para chamar explicitamente `createUser` + `login(app, usuario)`, exatamente
+       como os testes vizinhos nos mesmos blocos `describe`.
+     - Nos demais casos, `createSession` atua estritamente como **fixture de preparação de
+       cenário**: cria o usuário no banco (com `passwordHash` Argon2id real) e emite o `accessToken`
+       via `app.get(TokenService).signAccessToken(user.id, user.role).token`. Todas as requisições
+       subsequentes continuam atravessando integralmente o pipeline HTTP real (`JwtAuthGuard`,
+       `JwtStrategy` e `RolesGuard`).
+2. **Amplificador P0-B — Fechamento seguro de conexões HTTP em `createTestApp().close()`
+   (`backend/test/helpers/app.ts:68-80` — Ajuste obrigatório #4)**:
+   - **Avaliação de risco de `closeAllConnections()`**: No `http.Server` do Node.js,
+     `server.closeAllConnections()` encerra imediatamente tanto conexões ociosas quanto conexões
+     ativas; se fosse chamado enquanto uma requisição ainda estivesse em execução, poderia abortar
+     requisições em voo. Já `server.closeIdleConnections()` encerra exclusivamente conexões
+     keep-alive ociosas (sem requisição em andamento).
+   - **Uso seguro somente no teardown (`afterAll`)**: Em `createTestApp().close()` (invocado
+     exclusivamente em `afterAll`), chamamos primeiro `server.closeIdleConnections?.()` antes de
+     `await app.close()` (permitindo que `app.close()` drene qualquer trabalho residual e execute
+     `onModuleDestroy` / `PrismaService.$disconnect()` sem interromper requisições em voo) e
+     invocamos `server.closeAllConnections?.()` **somente após** a conclusão de `await app.close()`,
+     garantindo que nenhum descritor residual permaneça aberto entre os arquivos da suíte.
+
+#### 4. Limitações conhecidas e postura técnica (Ajuste obrigatório #7)
+
+- A redução do custo de `createSession` e o endurecimento do teardown reduzem substancialmente o
+  tempo da suíte e o volume de trabalho nativo/loopback por execução, mas **não eliminam a causa
+  subjacente no runtime Node 24/Windows**.
+- Nenhuma amostra finita de execuções permite declarar a instabilidade "resolvida". Os resultados
+  empíricos reais da Subetapa 7B.1 (incluindo o tempo de cada rodada, a ocorrência de abort na 4ª
+  execução e o risco residual) estão documentados integralmente na `§19.17.10`.
+
+---
+
+### 19.17.3 Prioridade P1 — Auditoria de segurança de dependências (`npm audit`)
+
+#### 1. Diagnóstico completo dos 13 alertas `moderate`
+
+| Escopo                                   | Comando                | Resultado                                                               |
+| ---------------------------------------- | ---------------------- | ----------------------------------------------------------------------- |
+| Produção (raiz, `backend`, `frontend`)   | `npm audit --omit=dev` | **0 vulnerabilidades** (`found 0 vulnerabilities` nas 3 árvores)        |
+| Desenvolvimento (`backend` + `frontend`) | `npm audit`            | **13 alertas `moderate`** (8 em `backend`, 5 em `frontend`), 1 advisory |
+
+- **Advisory único**: `GHSA-g3hv-75wg-m249` / `CVE-2026-118764` — _Denial of Service via
+  Globparts Pattern Amplification_ no pacote `minimatch` (`< 11.0.1`), na função
+  `firstPhasePreProcess()` quando `optimizationLevel >= 2` (o padrão é `1`) diante de padrões
+  glob maliciosos com segmentos `**/..` profundamente aninhados.
+- **Versão instalada**: `minimatch@10.2.6` (`"dev": true` em `backend/package-lock.json:6799` e
+  `frontend/package-lock.json:5462`; ausente na raiz).
+- **Cadeia de dependências (`npm ls minimatch`)**:
+  - `backend`: `@nestjs/cli@12.0.8` → `minimatch@10.2.6`; `eslint@10.13.0`
+    (`@eslint/config-array@0.23.5`) → `minimatch@10.2.6`; `typescript-eslint@8.71.2`
+    (`@typescript-eslint/typescript-estree@8.71.2` e 5 pacotes irmãos `@typescript-eslint/*`) →
+    `minimatch@10.2.6` (totalizando 8 nós reportados pelo `npm audit`).
+  - `frontend`: `eslint@10.13.0` (`@eslint/config-array@0.23.5`) → `minimatch@10.2.6`;
+    `typescript-eslint@8.71.2` (`@typescript-eslint/typescript-estree@8.71.2` e 3 pacotes irmãos)
+    → `minimatch@10.2.6` (totalizando 5 nós reportados pelo `npm audit`).
+
+#### 2. Impacto operacional real e opções técnicas
+
+- **Exposição em produção**: **Nula (0%)**. `minimatch` é exclusivamente `devDependency`, não é
+  empacotado em `backend/dist` nem em `frontend/dist` e jamais recebe dados HTTP ou entradas de
+  usuários.
+- **Exposição em desenvolvimento e CI**: **Desprezível**. `eslint`, `typescript-eslint` e
+  `@nestjs/cli` avaliam apenas globs estáticos definidos nos arquivos de configuração versionados
+  no próprio repositório (`eslint.config.mjs`, `tsconfig.json`, `nest-cli.json`), sem usar
+  `optimizationLevel >= 2`.
+- **Por que `npm audit fix` (sem `--force`) não aplica correção**: A correção foi lançada em
+  `minimatch >= 11.0.1` (mudança de versão major `10.x → 11.x`), enquanto `eslint@10.13.0`,
+  `typescript-eslint@8.71.2` e `@nestjs/cli@12.0.8` declaram faixa semver `^10.0.0` / `^10.2.2`.
+  Executar `npm audit fix --force` faria downgrade disruptivo de `eslint`, `typescript-eslint` e
+  `@nestjs/cli` (proibido pelas diretrizes do projeto).
+- **Opções submetidas à decisão do responsável (Decisão D7B-1)**:
+  - **Opção D7B-1a (Recomendada — Risco aceito e documentado em devDependencies, sem `overrides`
+    forçado)**: Manter os lockfiles intactos, preservar `npm audit --omit=dev` (0
+    vulnerabilidades) como critério de produção e registrar formalmente o aceite temporário de
+    `GHSA-g3hv-75wg-m249` em ferramentas de lint/build até que `eslint`/`typescript-eslint`/
+    `@nestjs/cli` atualizem sua faixa semver para `minimatch ^11.0.0`.
+  - **Opção D7B-1b (Alternativa — `overrides` cirúrgico para `minimatch@^11.0.1` em
+    `backend/package.json` e `frontend/package.json`)**: Como o `minimatch 11.0.x` manteve a
+    mesma arquitetura dual ESM/CommonJS e a mesma API pública da `10.2.6` (adicionando apenas os
+    tetos de segurança em `firstPhasePreProcess`), aplicar `"overrides": { "minimatch": "^11.0.1" }`
+    elimina os 13 avisos `moderate` sem fazer downgrade de nenhuma ferramenta, validando em
+    seguida `lint`, `typecheck`, `build` e todas as suítes de teste.
+
+---
+
+### 19.17.4 Prioridade P1 — Concorrência e integridade de estoque e inventário
+
+#### 1. Revisão crítica das garantias implementadas
+
+A inspeção linha a linha de `stock-movements.service.ts`, `stock-movements.sql.ts`,
+`inventories.service.ts`, `inventories.sql.ts`, `schema.prisma` e das migrations `5A` e `5B`
+confirmou que as garantias centrais do ADR-0003 e do plano da Fase 5 estão sólidas:
+
+- **Movimentações (`IN`, `OUT`, `ADJUSTMENT`)**:
+  - `applyIncrease`, `applyDecrease` e `applyAdjustment` realizam a checagem de estado
+    (`is_active = true`, `current_stock >= quantity`, `current_stock <> finalQuantity`) e a
+    atualização de `current_stock` na **mesma instrução SQL** dentro de transação interativa
+    `ReadCommitted` (`timeout: 10_000`), retornando `stock_before` e `stock_after` diretamente do
+    PostgreSQL (`RETURNING`).
+  - `StockMovement` e `AuditService.recordInTransaction(tx, ...)` são gravados na mesma
+    transação; falha em qualquer etapa reverte o saldo (provado em `atomicity.int-spec.ts`,
+    `AT-1` a `AT-3`).
+  - No banco: `CHECK (current_stock >= 0)`, `CHECK (quantity > 0)`, `CHECK (stock_after >= 0)`,
+    `stock_movements_balance_coherent`, `stock_movements_type_reason_coherent` e trigger
+    `stock_movements_immutable` (`SQLSTATE SF001`) impedindo `UPDATE` e `DELETE`.
+- **Inventário (`open`, `recordCount`, `submit`, `approve`, `cancel`)**:
+  - Exclusividade de produto em inventário não finalizado garantida no banco pelo índice único
+    parcial `inventory_items_one_unfinalized_per_product` (`ON inventory_items (product_id) WHERE
+in_progress`) + triggers `inventories_release_items_trigger` e
+    `inventories_forbid_reopen_trigger` (`SQLSTATE SF002`) + 5 `CHECK` constraints de coerência.
+  - Prevenção de deadlock: tanto o `INSERT ... SELECT FROM unnest(...) ORDER BY t.product_id` na
+    abertura quanto o `SELECT ... ORDER BY ii.product_id ASC` na aprovação adquirem locks de
+    produto sempre em ordem crescente de UUID.
+  - Aprovação atômica (`approve`, `timeout: 30_000`): trava o cabeçalho com `UPDATE inventories
+SET status = 'APPROVED' ... WHERE id = ... AND status = 'PENDING_APPROVAL' RETURNING id` (G1),
+    aplica `applyInventoryDelta` por item divergente com `WHERE current_stock + delta >= 0`,
+    cria `StockMovement` com `inventory_item_id` `@unique` (G2) e grava `recordInTransaction`. Se
+    qualquer item resultar em saldo negativo, `throwApprovalInsufficientStock` lista todos os
+    itens problemáticos e aborta a transação inteira (mantendo `PENDING_APPROVAL`).
+
+#### 2. Achados técnicos e avaliação dos riscos documentados
+
+1. **Lacuna de testes arquiteturais planejados na Fase 5 (`RG-6` e `G4` — `docs/17-plano-fase-5.md
+§17.6.8, §17.7.3 e §17.10`)**:
+   - O plano da Fase 5 especificou a criação de `backend/src/architecture.spec.ts` para garantir
+     por teste automatizado que:
+     - `RG-6`: `src/stock-movements/` e `src/inventories/` jamais chamem `audit.record(` (apenas
+       `audit.recordInTransaction(`);
+     - `G4`: apenas `InventoriesService.approve` invoque `applyInventoryDelta`;
+     - Todo `$queryRaw` / `$executeRaw` de produção resida exclusivamente em arquivos `*.sql.ts`
+       com tagged templates (nunca `$queryRawUnsafe` / `$executeRawUnsafe`).
+   - A inspeção de `backend/src/` mostrou que `src/architecture.spec.ts` **nunca foi criado**.
+     Implementá-lo no Marco 7B (Subetapa 7B.2) fecha essa lacuna sem alterar nenhuma regra de
+     negócio.
+2. **Comportamento no esgotamento de `MAX_CODE_ATTEMPTS = 25` na abertura de inventário
+   (`backend/src/inventories/inventories.service.ts:94-142`)**:
+   - Na remoção do `pg_advisory_xact_lock` na Fase 5B (`docs/17-plano-fase-5.md §17.18.1`), a
+     geração de `code` (`INV-AAAA-NNNN`) passou a usar retry otimista sobre a constraint
+     `inventories_code_key` (`23505`) com até `MAX_CODE_ATTEMPTS = 25` tentativas (comprovado em
+     teste para 20 aberturas simultâneas). Se a 25ª tentativa colidir, o erro Prisma `P2002` é
+     relançado e vira HTTP 500.
+   - **Veredito**: Comportamento já documentado e aceito em `§17.18.1` (subir >25 inventários no
+     mesmo milissegundo excede em ordens de grandeza a operação real de depósito). Mantido como
+     **Risco aceito, com justificativa**.
+3. **Riscos de negócio aceitos na Fase 5 (`D14` sem chave de idempotência em `POST /in` e
+   `POST /out`; `S9`/`D18` movimentação física anterior à contagem registrada depois; `D9`
+   ajuste de inventário em produto inativo)**:
+   - Todos permanecem fielmente cobertos pelos testes de caracterização e integridade
+     (`duplicates.int-spec.ts` `DUP-1` a `DUP-9`, `inventories.int-spec.ts` `S9` e `D9`) e pelos
+     sinais operacionais (`movedSinceCount`, `movementsSinceCount`, `/reports/divergences`,
+     `/reports/stock-reconciliation`). Classificados como **Risco aceito, com justificativa**, sem
+     alteração de regra de negócio.
+
+---
+
+### 19.17.5 Prioridade P2 — Segurança e tratamento de erros
+
+#### 1. `S11` — Assimetria entre `AuditService.record()` e `AuditService.recordInTransaction()`
+
+- **Diagnóstico**: A diferença é deliberada (Decisão `D3` da Fase 5, testada em `AT-9` de
+  `atomicity.int-spec.ts` e `audit.service.spec.ts`): `record()` é _best-effort_ para autenticação
+  e cadastros (Fases 3 e 4), enquanto `recordInTransaction()` é transacional e obrigatório para
+  estoque e inventário (Fase 5).
+- **Lacuna encontrada**:
+  1. Em `backend/src/audit/audit.service.ts`, a assinatura `record(input: RecordAuditInput)` aceita
+     qualquer membro de `AuditAction`, permitindo que um desenvolvedor passe acidentalmente uma
+     ação de estoque/inventário (`STOCK_MOVEMENT_CREATED`, `INVENTORY_*`) para o método
+     não-transacional `record()`, que engoliria falhas silenciosamente fora da transação.
+  2. Em `docs/08-seguranca.md §8.9`, o texto ainda descreve apenas o comportamento da Fase 4
+     (_"Falha ao gravar auditoria é logada pelo Pino, mas não reverte a operação de negócio"_),
+     omitindo `recordInTransaction()`.
+- **Solução recomendada no Marco 7B**:
+  - Segregar os tipos `TransactionalAuditAction` (`STOCK_MOVEMENT_CREATED` e `INVENTORY_*`) e
+    `BestEffortAuditAction` em `audit.service.ts`, restringir `record()` em tempo de compilação
+    (e com guarda defensiva em runtime) para recusar `TransactionalAuditAction`, adicionar o teste
+    arquitetural `RG-6` em `src/architecture.spec.ts` e atualizar `docs/08-seguranca.md §8.9`.
+
+#### 2. `S12` — `AllExceptionsFilter`: migração de blocklist (`FRAMEWORK_MESSAGES`) para allowlist estrita
+
+- **Descoberta técnica central desta investigação**:
+  - No Marco 7A (`§19.16.2`), havia sido estimado que migrar `AllExceptionsFilter` para allowlist
+    seria complexo porque _"vários pontos do código lançam exceções `HttpException` com mensagens
+    livres em português"_.
+  - Uma varredura exaustiva em `backend/src/` (`git grep "Exception(" backend/src/`) demonstrou
+    que **todos os services de domínio já lançam subclasses de `DomainError`**! Em todo o código
+    de produção de `backend/src/`, existem apenas **3** instanciações de `HttpException`:
+    1. `backend/src/auth/jwt.strategy.ts:46`: `throw new UnauthorizedException()` (sem mensagem
+       própria — usa `STATUS_TO_MESSAGE[401]`).
+    2. `backend/src/bootstrap.ts:180`: `new BadRequestException({ fields:
+flattenValidationErrors(errors) })` (tratado pelo ramo `'fields' in payload`, que usa
+       `STATUS_TO_MESSAGE[400]` e `details.fields`).
+    3. `backend/src/common/utils/pagination.ts:29`:
+       `throw new BadRequestException(\`Ordenação inválida: "${requested}". Valores aceitos: ${allowed.join(', ')}.\`)`!
+- **Consequência**: `pagination.ts:29` é o **único** ponto de todo o backend que ainda lança
+  `BadRequestException` com texto de negócio em vez de `DomainError`.
+- **Solução recomendada no Marco 7B**:
+  1. Criar `InvalidSortColumnError extends DomainError` (com `code = ErrorCode.VALIDATION_ERROR` e
+     `httpStatus = HttpStatus.BAD_REQUEST`, preservando exatamente o mesmo status HTTP `400`, o
+     mesmo `code: 'VALIDATION_ERROR'` e a mesma mensagem `'Ordenação inválida: "${requested}".
+Valores aceitos: ...'`) e lançá-lo em `resolveSortColumn` (`pagination.ts:29`).
+  2. Em `AllExceptionsFilter` (`backend/src/common/filters/all-exceptions.filter.ts`), remover a
+     blocklist frágil por regex (`FRAMEWORK_MESSAGES`) e adotar **allowlist estrita**: apenas
+     exceções de domínio (`isDomainError(exception)`) expõem `exception.message` no corpo da
+     resposta; qualquer `HttpException` de framework/biblioteca/pipe/guard usa **sempre** a
+     mensagem canônica de `STATUS_TO_MESSAGE[statusCode]` (preservando `details.fields` quando
+     vier do `ValidationPipe`).
+  3. Atualizar os 2 testes sintéticos de `all-exceptions.filter.spec.ts` (linhas 167–173 e
+     266–272, herdados da Fase 4 antes da migração dos services para `DomainError`) e
+     `pagination.spec.ts` para validar a política de allowlist.
+
+#### 3. Validação e normalização de dados externos nos pontos de entrada (DTOs e `transform.ts`)
+
+A inspeção completa dos 24 arquivos `*.dto.ts` e de `backend/src/common/utils/transform.ts`
+revelou **três vulnerabilidades/defeitos reais de borda**:
+
+1. **Defeito P2-V1 (Alto — HTTP 500 `INTERNAL_ERROR` e rollover silencioso em `@IsDateString()` de
+   `QueryMovementsDto` e `MovementsReportQueryDto`)**:
+   - **Problema e reprodução comprovada**: `QueryMovementsDto` (`dateFrom`, `dateTo`) e
+     `MovementsReportQueryDto` (`dateFrom`, `dateTo`) usam `@IsDateString({})`. Por padrão no
+     `class-validator` (`validator.isISO8601`), strings ISO como `'2026-W01'` (semana ISO) ou
+     `'20260101'` (formato básico sem hífens) retornam **`true`** na validação, mas
+     `new Date('2026-W01')` e `new Date('20260101')` no V8 retornam **`Invalid Date` (`NaN`)**!
+     Ao chegar em `@prisma/adapter-pg` (`formatDateTime`), `Invalid Date` é serializado como
+     `"NaN-NaN-NaN NaN:NaN:NaN"`, causando erro `22007` no PostgreSQL e resposta **HTTP 500
+     `INTERNAL_ERROR`** para uma simples query string inválida do cliente! Além disso, datas de
+     calendário inexistentes como `'2026-02-31'` passam em `@IsDateString({})` (`strict: false`
+     por padrão) e sofrem rollover silencioso no V8 para `'2026-03-03'`.
+   - **Solução**: Criar um validador dedicado `@IsIsoDateOrDateTime()` em
+     `backend/src/common/utils/` (aceitando apenas `YYYY-MM-DD` estrito de calendário real ou
+     datetime ISO 8601 estrito com `strict: true` + `strictSeparator: true` e verificando que
+     `!Number.isNaN(new Date(value).getTime())` e que `YYYY-MM-DD` não sofreu rollover de mês/dia)
+     e aplicá-lo em `QueryMovementsDto` e `MovementsReportQueryDto`.
+2. **Defeito P2-V2 (Médio — `toIntValue` em `backend/src/common/utils/transform.ts:57-70` aceita
+   lixo alfanumérico e trunca decimais silenciosamente)**:
+   - **Problema e reprodução comprovada**: `toIntValue` chama `Number.parseInt(value, 10)` sem
+     validar se a string inteira representa um inteiro. Em JavaScript,
+     `Number.parseInt('10abc', 10)` retorna `10` e `Number.parseInt('15.9', 10)` retorna `15`.
+     Assim, `?page=1abc`, `?limit=20xyz` ou `?days=15.9` passam por `@IsInt()` como `1`, `20` e
+     `15` em vez de retornarem HTTP `400 VALIDATION_ERROR`.
+   - **Solução**: Em `toIntValue`, verificar `/^-?\d+$/` sobre `value.trim()` antes do
+     `Number.parseInt`; caso contrário, retornar o `value` original para que `@IsInt()` o rejeite
+     com HTTP 400.
+3. **Defeito P2-V3 (Baixo — Campos textuais opcionais sem `@Transform(trimValue)` em DTOs)**:
+   - **Problema**: Enquanto `CreateCategoryDto`, `CreateMovementDto` e `CreateAdjustmentDto`
+     higienizam strings com `@Transform(trimValue)`, os campos `OpenInventoryDto.note`,
+     `CreateProductDto.description`, `CreateSupplierDto.phone`, `CreateSupplierDto.notes` e
+     `QueryAuditDto.action`/`entity` não aplicam `@Transform(trimValue)`.
+   - **Solução**: Adicionar `@Transform(trimValue)` nesses campos para padronizar a normalização
+     de borda em todos os DTOs de entrada.
+
+#### 4. Prevenção de regressões de autorização (`route-authorization.spec.ts`) e `Origin`/`Referer` (CSRF)
+
+- **RBAC (`S10`)**: `backend/src/common/guards/route-authorization.spec.ts` (implementado no Marco
+  7A) já audita todas as 53 rotas dos 11 controllers por dupla descoberta (`src/**/*.controller.ts`
+  e grafo `AppModule`), bloqueia conflitos `@Public() + @Roles()` e possui 3 testes negativos
+  permanentes em memória, complementado por `backend/test/rbac.int-spec.ts`. Nenhuma mudança
+  adicional necessária.
+- **`Origin`/`Referer` e CSRF (`S6` / `D7-4`)**: Mantido como **Adiável para a Fase 8**, pois a
+  validação de `Origin`/`Referer` em `/api/v1/auth/refresh` e `/api/v1/auth/logout` depende da
+  topologia final de deploy (mesma origem via proxy vs domínios separados), e as mitigações atuais
+  (`SameSite=Strict`, `HttpOnly`, `Path=/api/v1/auth`, rotação single-use de refresh token e
+  `Authorization: Bearer` obrigatório em todas as rotas mutáveis de negócio) já cobrem o modelo de
+  ameaças atual.
+
+---
+
+### 19.17.6 Catálogo consolidado de propostas do Marco 7B (8 critérios de qualidade)
+
+#### Item M7B-1 — Redução de churn de sockets loopback e Argon2id em `createSession` + `closeIdleConnections`/`closeAllConnections` no teardown de integração (P0)
+
+1. **Problema observado**: O worker do Vitest em `npm run test:int` no Windows + Node `24.15.0`
+   sofre abort nativo intermitente (`exit code 3221226505` / `0xC0000409`) durante a execução da
+   suíte (`RunnerState.STARTED`), enquanto `createSession` executava ~894 chamadas a
+   `POST /api/v1/auth/login` (~894 verificações nativas `@node-rs/argon2` de 19 MiB e ~2.682
+   escritas extras no banco) apenas para preparar fixtures em `beforeEach`.
+2. **Evidência / reprodução**: Histórico de execuções das Fases 4, 5 e 7A (1 abort em 2 execuções
+   no Marco 7A; 3 em 7 na Fase 5B) + bisseção da Fase 4 (`docs/16-relatorio-fase-4.md §16.7`) +
+   inspeção de `backend/test/helpers/app.ts:60-192` e `vitest/dist/chunks/index.1TqnEahn.js`.
+3. **Severidade e impacto**: **P0 (Alta no ambiente local Windows)** — interrompe execuções locais
+   de `test:int` e elevava o tempo da suíte para ~76,6s (embora não afete a produção nem o CI
+   Linux).
+4. **Solução recomendada (com ajustes obrigatórios #2, #3 e #4)**:
+   - Em `backend/test/helpers/app.ts`:
+     - Manter `createUser` com o hash Argon2id real de `TEST_PASSWORD` memorizado (`hashDaSenhaDeTeste()`).
+     - Em `createSession`, usar a emissão direta de `accessToken` via
+       `app.get(TokenService).signAccessToken(user.id, user.role).token` estritamente como **fixture
+       de preparação de cenário**, eliminando ~892 chamadas HTTP `/api/v1/auth/login` e ~892
+       verificações nativas Argon2id por rodada.
+     - Preservar integralmente `login(app, user)` (`POST /api/v1/auth/login`) em todos os testes que
+       verificam autenticação real, senha, rate limit, cookies e refresh token (`auth.int-spec.ts`,
+       `security.int-spec.ts`, `users.int-spec.ts`, `audit.int-spec.ts` e `rbac.int-spec.ts:484`).
+     - Em `createTestApp().close()` (executado exclusivamente em `afterAll`), invocar primeiro
+       `server.closeIdleConnections?.()` antes de `await app.close()` e `server.closeAllConnections?.()`
+       **somente após** `await app.close()`, evitando qualquer risco de encerrar requisições em voo.
+   - Executar bateria controlada de medição ($N = 5$ execuções consecutivas de `npm run test:int`
+     sem retries) e registrar todos os resultados reais e riscos residuais.
+5. **Alternativas e trade-offs**:
+   - _Alternativa 1_: Manter `createSession` fazendo `POST /api/v1/auth/login` em todos os ~894
+     pontos — mantém ~17 GiB de alocação nativa Argon2id desnecessária por rodada.
+   - _Alternativa 2_: Exigir troca imediata do Node local para Node 22 LTS — contorna o bug do
+     runtime Node 24 no Windows, mas depende de intervenção externa no ambiente da máquina.
+6. **Arquivos afetados**: `backend/test/helpers/app.ts`, `backend/test/audit.int-spec.ts` (linha 312)
+   e `backend/test/rbac.int-spec.ts` (linha 479).
+7. **Testes necessários para evitar regressão**: Execução completa das 17 suítes de integração
+   (`461/461` testes verdes) em bateria controlada de 5 execuções consecutivas sem retries.
+8. **Risco de incompatibilidade**: **Baixo** — restrito aos helpers de teste; nenhum código de
+   produção é alterado.
+
+- **Classificação**: **Obrigatório no 7B** (implementado na Subetapa `7B.1`).
+
+---
+
+#### Item M7B-2 — Migração de `AllExceptionsFilter` para allowlist estrita (`S12`) via `InvalidSortColumnError` (P2)
+
+1. **Problema observado**: `AllExceptionsFilter` (`all-exceptions.filter.ts:31-38, 179-227`) usa
+   uma blocklist de expressões regulares (`FRAMEWORK_MESSAGES`) para filtrar mensagens em inglês
+   do NestJS/Express/`body-parser`/`ThrottlerGuard`. Qualquer mensagem futura de biblioteca ou
+   middleware não prevista nas 5 regexes vaza para o cliente na resposta JSON.
+2. **Evidência / reprodução**: Dois vazamentos reais já ocorreram na Fase 4 (`ThrottlerException:
+Too Many Requests` e `Expected property name or '}' in JSON at position 1`), exigindo adição
+   reativa de regexes em `FRAMEWORK_MESSAGES`. A varredura de `backend/src/` comprovou que
+   `backend/src/common/utils/pagination.ts:29` (`resolveSortColumn`) é o **único** ponto de todo o
+   backend que ainda lança `BadRequestException` com mensagem própria em vez de `DomainError`.
+3. **Severidade e impacto**: **Média (Segurança / Prevenção de vazamento de informação — §8.10)**.
+4. **Solução recomendada (com ajuste obrigatório #6)**:
+   - Criar `InvalidSortColumnError extends DomainError` (`code = ErrorCode.VALIDATION_ERROR`,
+     `httpStatus = HttpStatus.BAD_REQUEST`) e usá-lo em `resolveSortColumn` (`pagination.ts:29`),
+     preservando exatamente a mesma mensagem, status `400` e código `VALIDATION_ERROR`.
+   - Simplificar `AllExceptionsFilter` para **allowlist estrita**: somente `isDomainError(exception)`
+     expõe `exception.message`; qualquer `HttpException` ou erro de middleware com status 4xx usa
+     `STATUS_TO_MESSAGE[statusCode]` (preservando `details.fields` para erros do
+     `ValidationPipe`), mantendo inalterado o contrato público de erro (`statusCode`, `code`,
+     `message`, `details`, `timestamp`, `path`, `requestId`) e jamais expondo detalhes internos de
+     exceções inesperadas.
+5. **Alternativas e trade-offs**:
+   - _Alternativa_: Manter a blocklist `FRAMEWORK_MESSAGES` e apenas adicionar novas regexes
+     quando um vazamento for descoberto — rejeitada porque a conversão de `pagination.ts:29` para
+     `DomainError` custa ~15 linhas e fecha a classe inteira de vulnerabilidade preventivamente.
+6. **Arquivos afetados**: `backend/src/common/utils/pagination.ts`,
+   `backend/src/common/utils/pagination.spec.ts`,
+   `backend/src/common/filters/all-exceptions.filter.ts`,
+   `backend/src/common/filters/all-exceptions.filter.spec.ts`.
+7. **Testes necessários para evitar regressão**: Testes unitários em
+   `all-exceptions.filter.spec.ts` comprovando que qualquer `HttpException` arbitrária (mesmo sem
+   bater nas antigas regexes de `FRAMEWORK_MESSAGES`) recebe a mensagem segura de
+   `STATUS_TO_MESSAGE`, enquanto `DomainError` e `InvalidSortColumnError` expõem suas mensagens em
+   português; mais suíte de integração completa (`contract.int-spec.ts`, `security.int-spec.ts`).
+8. **Risco de incompatibilidade**: **Muito baixo** — o contrato HTTP (`statusCode`, `code`,
+   `message`, `details`) permanece 100% idêntico para todas as rotas existentes.
+
+- **Classificação**: **Obrigatório no 7B** (Subetapa `7B.2`).
+
+---
+
+#### Item M7B-3 — Blindagem de `AuditService` (`S11`) e criação de `src/architecture.spec.ts` (`RG-6` e `G4`) (P1/P2)
+
+1. **Problema observado**:
+   - `AuditService.record()` aceita em sua tipagem qualquer `AuditAction`, permitindo que ações
+     transacionais críticas (`STOCK_MOVEMENT_CREATED`, `INVENTORY_*`) sejam passadas por engano ao
+     método _best-effort_ fora de transação.
+   - O arquivo `backend/src/architecture.spec.ts` (previsto em `docs/17-plano-fase-5.md §17.6.8 G4`,
+     `§17.7.3 RG-6` e `§17.10`) não foi criado na Fase 5.
+   - `docs/08-seguranca.md §8.9` ainda descreve apenas o comportamento _best-effort_ da Fase 4.
+2. **Evidência / reprodução**: Inspeção de `backend/src/audit/audit.service.ts:62-97`, ausência de
+   `backend/src/architecture.spec.ts` e leitura de `docs/08-seguranca.md:145-153`.
+3. **Severidade e impacto**: **Média (Integridade de trilha de auditoria e prevenção de regressão
+   arquitetural)**.
+4. **Solução recomendada**:
+   - Em `backend/src/audit/audit.service.ts`: dividir `AuditAction` em tipos
+     `TransactionalAuditAction` (`STOCK_MOVEMENT_CREATED` e `INVENTORY_*`) e
+     `BestEffortAuditAction`, tipar `record()` para aceitar apenas `BestEffortAuditAction` (com
+     guarda em runtime caso chamado via cast inseguro) e `recordInTransaction()` para exigir
+     transação.
+   - Criar `backend/src/architecture.spec.ts` verificando: (a) `RG-6`: `stock-movements` e
+     `inventories` nunca invocam `.record(`; (b) `G4`: apenas `InventoriesService` invoca
+     `applyInventoryDelta`; (c) nenhum arquivo em `backend/src/` usa `$queryRawUnsafe` ou
+     `$executeRawUnsafe`, e todo `$queryRaw`/`$executeRaw` de domínio reside em `*.sql.ts`.
+   - Atualizar `docs/08-seguranca.md §8.9` e `§8.5` para refletir fielmente a arquitetura atual.
+5. **Alternativas e trade-offs**:
+   - _Alternativa_: Confiar apenas em code review manual — inferior a uma trava de compilação +
+     teste unitário que roda em <50 ms.
+6. **Arquivos afetados**: `backend/src/audit/audit.service.ts`,
+   `backend/src/audit/audit.service.spec.ts`, `backend/src/architecture.spec.ts` (novo),
+   `docs/08-seguranca.md`.
+7. **Testes necessários para evitar regressão**: Casos unitários em `audit.service.spec.ts` e
+   `architecture.spec.ts` + suíte de integração `atomicity.int-spec.ts` (`AT-1` a `AT-9`).
+8. **Risco de incompatibilidade**: **Nulo** — nenhuma chamada válida existente em `backend/src/`
+   viola a separação (verificado nos 23 pontos de chamada).
+
+- **Classificação**: **Obrigatório no 7B** (Subetapa `7B.2`).
+
+---
+
+#### Item M7B-4 — Correção de validação de datas ISO (`@IsDateString`) e inteiros (`toIntValue`) + normalização `trimValue` nos DTOs de entrada (P2)
+
+1. **Problema observado**:
+   - **P2-V1**: `@IsDateString({})` em `QueryMovementsDto` e `MovementsReportQueryDto` aceita
+     strings ISO como `'2026-W01'` e `'20260101'` que geram `Invalid Date` em JavaScript e causam
+     **HTTP 500 (`22007: invalid input syntax for type timestamp with time zone: "NaN-NaN-NaN..."`)**
+     no PostgreSQL, além de aceitar datas inexistentes como `'2026-02-31'` (que sofrem rollover
+     silencioso para `'2026-03-03'`).
+   - **P2-V2**: `toIntValue` (`backend/src/common/utils/transform.ts:57-70`) usa
+     `Number.parseInt(value, 10)` sem checar `/^-?\d+$/`, convertendo `'10abc'` em `10` e `'15.9'`
+     em `15` em vez de recusar com HTTP 400.
+   - **P2-V3**: `OpenInventoryDto.note`, `CreateProductDto.description`,
+     `CreateSupplierDto.phone`/`notes` e `QueryAuditDto.action`/`entity` não aplicam
+     `@Transform(trimValue)`.
+2. **Evidência / reprodução**: Comprovado via execução direta de `isDateString` (`class-validator`)
+   e `new Date()` no Node `24.15.0` e leitura de `@prisma/adapter-pg/dist/index.js:389-393` e
+   `backend/src/common/utils/transform.ts:57-70`.
+3. **Severidade e impacto**: **Média-Alta** — um parâmetro de query string malformado (`?dateFrom=20260101`
+   ou `?dateFrom=2026-W01`) provoca HTTP 500 `INTERNAL_ERROR` e alerta de erro no servidor em vez
+   de HTTP 400 `VALIDATION_ERROR`.
+4. **Solução recomendada (com ajuste obrigatório #5)**:
+   - Criar o decorator `@IsIsoDateOrDateTime()` (em `backend/src/common/utils/date.validators.ts`)
+     que exige string ISO estrita (`YYYY-MM-DD` real sem rollover de calendário ou ISO 8601
+     datetime com `strict: true` e `strictSeparator: true` cuja conversão por `new Date()` seja
+     finita), preservando todos os formatos válidos já aceitos e os contratos públicos existentes,
+     e aplicá-lo em `QueryMovementsDto` (`dateFrom`, `dateTo`) e `MovementsReportQueryDto`
+     (`dateFrom`, `dateTo`).
+   - Endurecer `toIntValue` em `backend/src/common/utils/transform.ts` para aceitar apenas strings
+     que casem com `/^-?\d+$/` (após `trim()`), preservando o valor original caso contrário para
+     que `@IsInt()` gere HTTP 400.
+   - Adicionar `@Transform(trimValue)` nos campos textuais opcionais de `OpenInventoryDto`,
+     `CreateProductDto`, `CreateSupplierDto` e `QueryAuditDto`.
+5. **Alternativas e trade-offs**:
+   - _Alternativa_: Tratar `Invalid Date` apenas dentro dos services — inferior a barrar na borda
+     do DTO (`ValidationPipe`), onde todos os erros de entrada retornam `400 VALIDATION_ERROR` com
+     `details.fields`.
+6. **Arquivos afetados**: `backend/src/common/utils/transform.ts`,
+   `backend/src/common/utils/transform.spec.ts` (novo),
+   `backend/src/common/utils/date.validators.ts` (novo),
+   `backend/src/common/utils/date.validators.spec.ts` (novo),
+   `backend/src/stock-movements/dto/query-movements.dto.ts`,
+   `backend/src/reports/dto/movements-report-query.dto.ts`,
+   `backend/src/inventories/dto/open-inventory.dto.ts`,
+   `backend/src/products/dto/product.dto.ts`,
+   `backend/src/suppliers/dto/supplier.dto.ts`,
+   `backend/src/audit/dto/query-audit.dto.ts`.
+7. **Testes necessários para evitar regressão**: Testes unitários para `toIntValue` (`'10abc'`,
+   `'1.5'`, `''`, `'42'`) e `@IsIsoDateOrDateTime()` cobrindo limites de calendário (`'2024-02-29'`
+   bissexto válido vs `'2026-02-29'`, `'2026-02-31'`, `'2026-04-31'`), formatos sem separador/semana
+   (`'2026-W01'`, `'20260101'`), fuso horário (`'2026-10-01T12:00:00Z'`, `'2026-10-01T12:00:00-03:00'`)
+   e comportamento de `dateFrom`/`dateTo` em integração (`reports.int-spec.ts` e
+   `stock-movements.int-spec.ts`).
+8. **Risco de incompatibilidade**: **Muito baixo** — entradas válidas (`YYYY-MM-DD`, ISO 8601
+   datetime completo e inteiros válidos) continuam aceitas exatamente como antes.
+
+- **Classificação**: **Aprovado no escopo do 7B (Decisão D7B-2: Opção A — Subetapa `7B.2`)**.
+
+---
+
+#### Item M7B-5 — Resolução dos 13 alertas `moderate` de `minimatch` (`GHSA-g3hv-75wg-m249`) em `devDependencies` (P1)
+
+1. **Problema observado**: `npm audit` reporta 13 ocorrências `moderate` de `GHSA-g3hv-75wg-m249`
+   sobre `minimatch@10.2.6` (transitiva de `eslint@10.13.0`, `typescript-eslint@8.71.2` e
+   `@nestjs/cli@12.0.8`), enquanto `npm audit --omit=dev` reporta **0 vulnerabilidades**.
+2. **Evidência / reprodução**: `npm audit --omit=dev` e `npm ls minimatch` em `backend` e
+   `frontend`.
+3. **Severidade e impacto**: **Baixa / Nula em produção** (afeta exclusivamente ferramentas de
+   lint e build local/CI sob padrões glob maliciosos com `optimizationLevel >= 2`).
+4. **Decisão aprovada (D7B-1: Opção A)**:
+   - Aceitar temporariamente e documentar o risco em `devDependencies`, sem aplicar `overrides`
+     cross-major nem `npm audit fix --force`. Manter o acompanhamento de correções upstream e os
+     resultados do `npm audit` completo e do `npm audit --omit=dev` visíveis nesta documentação.
+5. **Alternativas e trade-offs**: `npm audit fix --force` causaria downgrade breaking de `eslint` e
+   `typescript-eslint`; `overrides` cross-major foi descartado em favor da estabilidade dos
+   lockfiles.
+6. **Arquivos afetados**: Apenas `docs/19-plano-fase-7.md` (nenhum `package.json` ou lockfile
+   alterado).
+7. **Testes necessários para evitar regressão**: Verificação contínua de `npm audit --omit=dev`
+   (0 vulnerabilidades).
+8. **Risco de incompatibilidade**: **Nulo**.
+
+- **Classificação**: **Risco aceito, com justificativa (Decisão D7B-1: Opção A)**.
+
+---
+
+#### Item M7B-6 — Guard de `Origin`/`Referer` em `/auth/refresh` e `/auth/logout` (`S6` / `D7-4`) e riscos de negócio da Fase 5 (`D14`, `S9`/`D18`, `D9`, `MAX_CODE_ATTEMPTS`)
+
+1. **Problema observado**:
+   - `S6` / `D7-4`: Validação adicional de `Origin`/`Referer` para endpoints que leem o cookie
+     `refresh_token`.
+   - `D14`, `S9`/`D18`, `D9` e `MAX_CODE_ATTEMPTS = 25`: Limites operacionais e decisões de
+     domínio já estabelecidos na Fase 5.
+2. **Evidência / reprodução**: Documentados em `docs/17-plano-fase-5.md §17.6.6, §17.6.7, §17.7.5,
+§17.13, §17.18.1` e `docs/19-plano-fase-7.md §19.5.2, §19.13`.
+3. **Severidade e impacto**: **Baixa** — já mitigados por `SameSite=Strict`, `HttpOnly`,
+   `Path=/api/v1/auth`, rotação single-use de refresh token, `Authorization: Bearer` nas rotas de
+   negócio e invariantes SQL/transacionais do estoque.
+4. **Solução recomendada**:
+   - Manter `S6`/`D7-4` (`Origin`/`Referer`) **Adiável para a Fase 8**, quando a topologia real de
+     deploy (mesma origem vs origens distintas) for definida.
+   - Manter `D14`, `S9`/`D18`, `D9` e `MAX_CODE_ATTEMPTS = 25` como **Risco aceito, com
+     justificativa**, preservando integralmente as regras de negócio e os contratos de API.
+5. **Alternativas e trade-offs**: Antecipar `Origin`/`Referer` agora exigiria assumir uma
+   topologia de deploy que pode mudar na Fase 8.
+6. **Arquivos afetados**: Nenhum no Marco 7B.
+7. **Testes necessários para evitar regressão**: Suítes existentes (`auth.int-spec.ts`,
+   `duplicates.int-spec.ts`, `inventories.int-spec.ts`).
+8. **Risco de incompatibilidade**: **Nulo**.
+
+- **Classificação**: **Adiável para a Fase 8** (`S6`/`D7-4`) e **Risco aceito, com justificativa**
+  (`D14`, `S9`/`D18`, `D9`, `MAX_CODE_ATTEMPTS`).
+
+---
+
+### 19.17.7 Quadro-resumo de classificação das propostas do Marco 7B
+
+| ID        | Proposta                                                                                                                    | Prioridade | Classificação                                                                   |
+| --------- | --------------------------------------------------------------------------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------- |
+| **M7B-1** | Mitigação de custo de `createSession` + `closeIdleConnections`/`closeAllConnections` no teardown + medição empírica ($N=5$) | **P0**     | **Obrigatório no 7B** (Concluído em `7B.1`)                                     |
+| **M7B-2** | Migração de `AllExceptionsFilter` para allowlist estrita (`S12`) via `InvalidSortColumnError` em `pagination.ts`            | **P2**     | **Obrigatório no 7B** (Subetapa `7B.2`)                                         |
+| **M7B-3** | Segregação de tipos/guarda em `AuditService` (`S11`), criação de `src/architecture.spec.ts` (`RG-6`/`G4`) e doc             | **P1/P2**  | **Obrigatório no 7B** (Subetapa `7B.2`)                                         |
+| **M7B-4** | Validador estrito `@IsIsoDateOrDateTime()` (evita HTTP 500), endurecimento de `toIntValue` e `trimValue` em DTOs            | **P2**     | **Aprovado no 7B — Decisão D7B-2: Opção A** (Subetapa `7B.2`)                   |
+| **M7B-5** | Tratamento dos 13 alertas `moderate` de `minimatch` (`GHSA-g3hv-75wg-m249`) em `devDependencies` (Decisão D7B-1)            | **P1**     | **Risco aceito, com justificativa — Decisão D7B-1: Opção A**                    |
+| **M7B-6** | Validação de `Origin`/`Referer` (`S6`/`D7-4`) e limites documentados da Fase 5 (`D14`, `S9`/`D18`, `D9`)                    | **P1/P2**  | **Adiável para a Fase 8** (`S6`) / **Risco aceito, com justificativa** (Fase 5) |
+
+---
+
+### 19.17.8 Divisão aprovada para execução do Marco 7B e critérios objetivos de aceite
+
+#### Subetapa 7B.1 — Estabilidade da suíte de integração no Windows (`M7B-1`)
+
+- **Escopo**:
+  - Refatorar `backend/test/helpers/app.ts` (`createSession` usando `TokenService.signAccessToken`
+    como fixture de preparação de cenário e `closeIdleConnections`/`closeAllConnections` em
+    `createTestApp().close()`), ajustando os 2 únicos pontos de chamada que liam
+    `sessao.refreshCookie` (`audit.int-spec.ts:312` e `rbac.int-spec.ts:479`) para usar
+    explicitamente `login(app, user)`.
+  - Executar bateria controlada de $N = 5$ execuções consecutivas de `npm run test:int` (sem
+    retries) e registrar tempos, falhas/aborts e risco residual.
+- **Critério de aceite**:
+  - Suíte `461/461` preservando cobertura real de autenticação e autorização; redução mensurável de
+    custo e duração; registro honesto da amostra estatística e de qualquer abort observado, sem
+    declarar a instabilidade do runtime como "resolvida".
+
+#### Subetapa 7B.2 — Segurança, `AllExceptionsFilter` em allowlist, blindagem `S11` e validação de entrada (`M7B-2`, `M7B-3`, `M7B-4`)
+
+- **Escopo**:
+  - Converter `resolveSortColumn` (`pagination.ts:29`) para `InvalidSortColumnError extends
+DomainError` e mudar `AllExceptionsFilter` de blocklist (`FRAMEWORK_MESSAGES`) para allowlist
+    estrita (`S12`), preservando o contrato público de erro.
+  - Restringir `AuditService.record()` a `BestEffortAuditAction` (`S11`), criar
+    `backend/src/architecture.spec.ts` (`RG-6`, `G4` e guarda de SQL cru) e atualizar
+    `docs/08-seguranca.md §8.5` e `§8.9`.
+  - Implementar `@IsIsoDateOrDateTime()`, endurecer `toIntValue` em `transform.ts` e adicionar
+    `@Transform(trimValue)` nos campos textuais pendentes dos DTOs (`M7B-4`), com testes unitários
+    e de integração cobrindo limites de calendário, fuso horário e `dateFrom`/`dateTo`.
+- **Critério de aceite**:
+  - `npm test` (unitários + arquitetura), `npm run test:int` (integração), `npm run lint`,
+    `npm run typecheck` e `npm run build` 100% verdes; nenhum `HttpException` genérico vaza
+    mensagem interna; datas malformadas (`2026-W01`, `20260101`, `2026-02-31`) e inteiros
+    malformados (`10abc`, `15.9`) retornam `400 VALIDATION_ERROR` (e nunca `500`).
+
+#### Subetapa 7B.3 — Validação final ponta a ponta, documentação e revisão para commit/push
+
+- **Escopo**:
+  - Executar a bateria completa de verificação (`lint`, `typecheck`, `test`, `test:int`, `build`,
+    `test:e2e` Playwright, `format:check`, `npm audit --omit=dev`).
+  - Consolidar o relatório final do Marco 7B em `docs/19-plano-fase-7.md` e aguardar autorização
+    explícita do responsável antes de qualquer commit ou push.
+
+---
+
+### 19.17.9 Decisões aprovadas do Marco 7B
+
+| #         | Decisão                                                                                          | Deliberação aprovada pelo responsável (2026-11-05)                                                                                                  |
+| --------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **D7B-1** | Tratamento dos 13 alertas `moderate` de `minimatch` (`GHSA-g3hv-75wg-m249`) em `devDependencies` | **Opção A aprovada**: aceitar temporariamente e documentar o risco em `devDependencies`, sem `overrides` cross-major e sem `npm audit fix --force`. |
+| **D7B-2** | Escopo de implementação do Marco 7B                                                              | **Opção A aprovada**: implementar o escopo completo (`M7B-1`, `M7B-2`, `M7B-3` e `M7B-4`) dividido nas subetapas `7B.1`, `7B.2` e `7B.3`.           |
+
+---
+
+### 19.17.10 Execução e resultados reais da Subetapa 7B.1 (2026-11-05)
+
+#### 1. Baseline antes da alteração
+
+- **Custo de sessão por execução de `npm run test:int`**:
+  - ~894 chamadas a `createSession(app, prisma, role)` distribuídas em 12 das 17 suítes de
+    integração (com destaque para `rbac.int-spec.ts` com ~489 chamadas, `stock-movements.int-spec.ts`
+    com 108, `inventories.int-spec.ts` com 87 e `catalog.int-spec.ts` com 54).
+  - Cada chamada executava `POST /api/v1/auth/login` via `supertest` + `Argon2id.verify()` nativo
+    (19 MiB) + 3 escritas no PostgreSQL (`refresh_tokens`, `users.lastLoginAt`, `audit_logs`).
+- **Tempo e estabilidade de referência antes da Subetapa 7B.1**:
+  - Duração quando concluída sem abort no Marco 7A (`§19.16.5`, já com memoização do hash Argon2id
+    em `createUser`, mas ainda executando `login` HTTP + `Argon2id.verify()` em `createSession`):
+    **`76,57s`** (`rbac.int-spec.ts` levando ~15–20s). _(Nota de consistência: o patamar histórico
+    anterior de ~`98s` referia-se à Fase 4 antes da memoização de `hashDaSenhaDeTeste()` em
+    `createUser`; por isso, todas as comparações de ganho da Subetapa 7B.1 adotam exclusivamente o
+    baseline compatível de `76,57s` do Marco 7A)._
+  - Taxa histórica de abort (`exit code 3221226505` / `0xC0000409`): 1 abort em 2 execuções no
+    Marco 7A (`50%`, abortando em `rbac.int-spec.ts`) e 5 aborts em 7 execuções na sessão anterior
+    (`§19.16.7`).
+
+#### 2. Alterações mínimas implementadas na Subetapa 7B.1
+
+1. **`backend/test/helpers/app.ts`**:
+   - Em `createTestApp().close()`: adicionada chamada a `server.closeIdleConnections?.()` antes de
+     `await app.close()` e `server.closeAllConnections?.()` **após** `await app.close()` no
+     teardown (`afterAll`), evitando qualquer interrupção de requisições em voo e garantindo
+     liberação completa de sockets entre arquivos.
+   - Em `createSession(app, prisma, role)`: substituída a chamada a `login(app, user)` pela emissão
+     direta do `accessToken` via `app.get(TokenService).signAccessToken(user.id, user.role)` como
+     fixture de preparação de cenário (`refreshCookie: ''`), mantendo o `createUser(prisma, role)`
+     com `passwordHash` Argon2id real no banco e `login(app, user)` intacto para autenticação HTTP
+     completa.
+2. **`backend/test/audit.int-spec.ts` (linha 312) e `backend/test/rbac.int-spec.ts` (linha 479)**:
+   - Os 2 únicos testes da suíte que usavam `createSession` e dependiam de `sessao.refreshCookie`
+     (`it('logout')` em `audit.int-spec.ts` e `it('mas a renovação com o papel novo fecha a janela')`
+     em `rbac.int-spec.ts`) passaram a chamar explicitamente `createUser` + `login(app, usuario)`,
+     alinhados aos demais testes de sessão HTTP dos mesmos arquivos.
+3. **Nenhum arquivo de produção (`backend/src/`, `frontend/src/`, `prisma/`, `package.json`) foi
+   modificado.**
+
+#### 3. Resultados da bateria controlada de 5 execuções consecutivas de `npm run test:int` (sem retries)
+
+| Rodada | Arquivos aprovados | Testes aprovados | Duração total | Tempo de `rbac.int-spec.ts` | Ocorrência de `0xC0000409` (`3221226505`)                                        |
+| ------ | ------------------ | ---------------- | ------------- | --------------------------- | -------------------------------------------------------------------------------- |
+| **#1** | `17 / 17`          | `461 / 461`      | **`59,16s`**  | `4,20s`                     | ✅ Nenhuma (`exit code 0`)                                                       |
+| **#2** | `17 / 17`          | `461 / 461`      | **`58,35s`**  | ~`4,2s`                     | ✅ Nenhuma (`exit code 0`)                                                       |
+| **#3** | `17 / 17`          | `461 / 461`      | **`59,22s`**  | ~`4,2s`                     | ✅ Nenhuma (`exit code 0`)                                                       |
+| **#4** | `16 / 17`          | `428 / 461`      | **`59,77s`**  | ~`4,2s`                     | ⚠️ 1 abort no worker durante `test/security.int-spec.ts` (`RunnerState.STARTED`) |
+| **#5** | `17 / 17`          | `461 / 461`      | **`59,48s`**  | ~`4,2s`                     | ✅ Nenhuma (`exit code 0`)                                                       |
+
+- **Demais verificações executadas na Subetapa 7B.1**:
+  - `npm --prefix backend test` (unitários): **18/18 arquivos, 219/219 testes aprovados** (`4,93s`).
+  - `npm --prefix backend run lint`: **0 erros, 0 warnings**.
+  - `npm --prefix backend run typecheck`: **0 erros**.
+  - `npm --prefix backend run build`: **concluído sem erros**.
+  - `npm run format:check`: **100% em conformidade com Prettier**.
+
+#### 4. Análise crítica, limitações estatísticas e risco residual
+
+1. **Ganho mensurável de desempenho e eliminação do gargalo em `rbac.int-spec.ts`**:
+   - A duração média da suíte caiu de **`76,57s`** para **`59,20s`** (redução consistente de
+     **`-17,37s` / `-22,7%`** por execução completa).
+   - O arquivo `rbac.int-spec.ts` (que concentrava ~489 chamadas a `createSession` e havia abortado
+     no Marco 7A) caiu de ~15–20s para **`4,20s`** e passou em **`5/5` (`100%`)** das rodadas.
+2. **Amostra estatística limitada e comprovação empírica do risco residual (Ajustes #1 e #7)**:
+   - Em $N = 5$ execuções consecutivas da suíte completa (totalizando $5 \times 17 = 85$ execuções
+     de arquivos de teste em workers), **4 de 5 rodadas completas (`80%`)** e **84 de 85 arquivos
+     (`98,8%`)** terminaram com `exit code 0`.
+   - A ocorrência de 1 abort (`exit code 3221226505`) na Rodada #4 dentro de
+     `test/security.int-spec.ts` (arquivo que dispara dezenas de requisições HTTP diretas para
+     testar rate limit, brute-force, payloads grandes e headers de segurança) comprova
+     empiricamente que:
+     - a instabilidade **não** era causada pelo `@node-rs/argon2` em `createSession`; e
+     - o problema **não está resolvido em definitivo** por otimizações nos helpers de teste, pois o
+       abort nativo permanece reproduzível de forma intermitente no runtime `node.exe` `v24.15.0`
+       no Windows (`Windows_NT 10.0.26200 x64`), enquanto no CI Linux (`ubuntu-latest`) a taxa de
+       falha permanece `0%`.
+   - **Risco residual documentado**: No ambiente local Windows com Node `24.15.0`, persiste uma
+     probabilidade residual (~1 em 5 rodadas completas / ~1,2% por arquivo na amostra $N=5$) de o
+     worker sofrer abort nativo `0xC0000409`. Nenhuma configuração de retry automático foi
+     adicionada para não mascarar falhas.
+
+**Subetapa 7B.1 concluída e aprovada pelo responsável.**
+
+---
+
+### 19.17.11 Execução e resultados reais da Subetapa 7B.2 (2026-11-05)
+
+#### 1. Implementações realizadas (`M7B-2`, `M7B-3` e `M7B-4`)
+
+1. **`M7B-2` (`S12` — `AllExceptionsFilter` em allowlist estrita via `InvalidSortColumnError`)**:
+   - Em `backend/src/common/utils/pagination.ts`: criada e exportada `InvalidSortColumnError extends DomainError` (`code = ErrorCode.VALIDATION_ERROR`, `httpStatus = HttpStatus.BAD_REQUEST`) e lançada em `resolveSortColumn`, preservando 100% do contrato HTTP (`400`, `VALIDATION_ERROR`, mesma mensagem).
+   - Em `backend/src/common/filters/all-exceptions.filter.ts`: removida a blocklist por regex `FRAMEWORK_MESSAGES` / `isFrameworkMessage` e adotada **allowlist estrita**: apenas erros de domínio (`isDomainError(exception)`) expõem `exception.message` e `exception.details`; qualquer `HttpException` 4xx usa sempre a mensagem canônica de `STATUS_TO_MESSAGE[statusCode]` (preservando `details.fields` quando oriunda do `ValidationPipe`), e qualquer `HttpException` 5xx retorna `500 INTERNAL_ERROR` com `GENERIC_SERVER_MESSAGE` sem `details`.
+   - Atualizados `backend/src/common/utils/pagination.spec.ts` e `backend/src/common/filters/all-exceptions.filter.spec.ts` (30 casos unitários).
+2. **`M7B-3` (`S11` — Blindagem de `AuditService`, criação de `src/architecture.spec.ts` e atualização de `docs/08-seguranca.md`)**:
+   - Em `backend/src/audit/audit.service.ts`: segregados `TRANSACTIONAL_AUDIT_ACTIONS` (`TransactionalAuditAction`: `STOCK_MOVEMENT_CREATED` e `INVENTORY_*`) e `BestEffortAuditAction = Exclude<AuditAction, TransactionalAuditAction>`. O método `record()` foi restrito em tempo de compilação a `RecordAuditInput<BestEffortAuditAction>` e recebeu guarda defensiva em runtime (antes do `try/catch`) que lança erro caso uma ação transacional seja passada via cast inseguro.
+   - Em `backend/src/audit/audit.service.spec.ts`: adicionados 6 casos parametrizados (`it.each(TRANSACTIONAL_AUDIT_ACTIONS)`) comprovando a recusa em runtime.
+   - Criado `backend/src/architecture.spec.ts` verificando os 4 invariantes arquiteturais sobre `backend/src/`:
+     - `RG-6`: `stock-movements/` e `inventories/` jamais invocam `.record(`;
+     - `G4`: apenas `inventories/inventories.service.ts` invoca `applyInventoryDelta` (definido em `inventories/inventories.sql.ts`);
+     - `SQL seguro`: nenhum arquivo de produção usa `$queryRawUnsafe`, `$executeRawUnsafe` ou chamada não-tagged (`$queryRaw(...)` / `$executeRaw(...)`);
+     - `SQL parametrizado`: `$queryRaw` e `$executeRaw` residem apenas em `*.sql.ts` e na allowlist auditada (`prisma.service.ts`, `token.service.ts`, `categories.service.ts`, `products.service.ts`).
+   - Atualizado `docs/08-seguranca.md` (`§8.5` e `§8.9`).
+3. **`M7B-4` (Validação estrita `@IsIsoDateOrDateTime()`, endurecimento de `toIntValue` e normalização `trimValue` em DTOs)**:
+   - Criado `backend/src/common/utils/date.validators.ts` (`isIsoDateOrDateTimeString` e `@IsIsoDateOrDateTime()`) que exige `YYYY-MM-DD` real do calendário Gregoriano (sem rollover silencioso como `'2026-02-31'` ou `'2026-02-29'`) ou datetime ISO 8601 estrito com separador `T` (`strict: true`, `strictSeparator: true`) cuja conversão por `new Date()` seja finita, bloqueando entradas como `'2026-W01'` e `'20260101'` que causavam HTTP 500 no PostgreSQL.
+   - Aplicado `@IsIsoDateOrDateTime()` em `QueryMovementsDto` (`dateFrom`, `dateTo`) e `MovementsReportQueryDto` (`dateFrom`, `dateTo`).
+   - Endurecido `toIntValue` em `backend/src/common/utils/transform.ts` para aceitar apenas strings que casem com `/^-?\d+$/` após `trim()`, preservando o valor original para que `@IsInt()` rejeite `'10abc'` ou `'15.9'` com HTTP 400.
+   - Adicionado `@Transform(trimValue)` nos campos textuais opcionais de `OpenInventoryDto` (`note`), `CreateProductDto` (`description`), `CreateSupplierDto` (`phone`, `notes`) e `QueryAuditDto` (`action`, `entity`).
+   - Criados os testes unitários `backend/src/common/utils/date.validators.spec.ts` (32 testes) e `backend/src/common/utils/transform.spec.ts` (10 testes) e adicionados testes de integração em `backend/test/reports.int-spec.ts` e `backend/test/stock-movements.int-spec.ts`.
+
+#### 2. Resultados reais das verificações da Subetapa 7B.2
+
+| Verificação                                      | Resultado                                                                                                                                                     |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm --prefix backend test` (unitários + arq.)   | ✅ **21/21 arquivos, 273/273 testes aprovados** (`3,65s`, incluindo 4 em `architecture.spec.ts`, 32 em `date.validators.spec.ts` e 10 em `transform.spec.ts`) |
+| `npm --prefix backend run test:int` (integração) | ✅ **17/17 arquivos, 462/462 testes aprovados** (`60,66s`, 0 aborts)                                                                                          |
+| `npm --prefix backend run lint`                  | ✅ **0 erros, 0 warnings**                                                                                                                                    |
+| `npm --prefix backend run typecheck`             | ✅ **0 erros**                                                                                                                                                |
+| `npm --prefix backend run build`                 | ✅ **concluído sem erros**                                                                                                                                    |
+| `npm run format:check`                           | ✅ **limpo (`All matched files use Prettier code style!`)**                                                                                                   |
+
+**Subetapa 7B.2 concluída e aprovada pelo responsável.**
+
+---
+
+### 19.17.12 Auditoria final, validação ponta a ponta e preparação para publicação (Subetapa 7B.3 — 2026-11-05)
+
+#### 1. Auditoria crítica do diff completo do Marco 7B
+
+| Eixo auditado                        | Verificação realizada                                                                                                                                                                                                                                | Resultado   |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| **Autenticação e sessões de teste**  | `createSession` emite o `accessToken` pelo `TokenService.signAccessToken` apenas como fixture; `auth.int-spec.ts` (29 testes), `security.int-spec.ts`, `users.int-spec.ts`, `audit.int-spec.ts` e `rbac.int-spec.ts:484` usam `login(app, user)`     | ✅ Aprovado |
+| **Tratamento de erros (`S12`)**      | `AllExceptionsFilter` opera em allowlist estrita: só `isDomainError(exception)` expõe `exception.message`/`details`; qualquer `HttpException` 4xx/5xx ou erro inesperado usa mensagem canônica sem vazar SQL, stack, paths ou detalhes de biblioteca | ✅ Aprovado |
+| **Auditoria e arquitetura (`S11`)**  | `AuditService.record()` rejeita `TransactionalAuditAction` em compilação e em runtime; `src/architecture.spec.ts` valida `RG-6`, `G4` e SQL parametrizado em todas as 42 unidades de código de produção                                              | ✅ Aprovado |
+| **Validação de entradas (`M7B-4`)**  | `@IsIsoDateOrDateTime()` valida datas reais e fuso horário e bloqueia `'2026-W01'`, `'20260101'`, `'2026-02-29'` e `'2026-02-31'` com HTTP 400 (nunca 500); `toIntValue` bloqueia `'10abc'` e `'15.9'`; `trimValue` aplicado nos DTOs pendentes      | ✅ Aprovado |
+| **Integridade de escopo e arquivos** | Nenhuma migration (`prisma/migrations/`), nenhum `package.json`/lockfile e nenhum workflow (`.github/workflows/ci.yml`) foi modificado; nenhum `.env` ou segredo exposto                                                                             | ✅ Aprovado |
+
+#### 2. Bateria completa de validação executada na Subetapa 7B.3
+
+| Camada / Escopo               | Comando                                                                           | Resultado real                                                                                                                                       |
+| ----------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Backend — Lint**            | `npm --prefix backend run lint`                                                   | ✅ **0 erros, 0 warnings**                                                                                                                           |
+| **Backend — Typecheck**       | `npm --prefix backend run typecheck`                                              | ✅ **0 erros**                                                                                                                                       |
+| **Backend — Unitários + Arq** | `npm --prefix backend test`                                                       | ✅ **21/21 arquivos, 273/273 testes aprovados** (`3,65s`)                                                                                            |
+| **Backend — Integração**      | `npm --prefix backend run test:int`                                               | ✅ **17/17 arquivos, 462/462 testes aprovados** (`60,66s`, 0 aborts; + bateria `7B.1` de 5 execuções consecutivas: 4/5 completas)                    |
+| **Backend — Build**           | `npm --prefix backend run build`                                                  | ✅ **concluído sem erros**                                                                                                                           |
+| **Frontend — Lint**           | `npm --prefix frontend run lint`                                                  | ✅ **0 erros, 0 warnings**                                                                                                                           |
+| **Frontend — Typecheck**      | `npm --prefix frontend run typecheck`                                             | ✅ **0 erros**                                                                                                                                       |
+| **Frontend — Unitários**      | `npm --prefix frontend test`                                                      | ✅ **36/36 arquivos, 258/258 testes aprovados** (`22,68s`)                                                                                           |
+| **Frontend — Build**          | `npm --prefix frontend run build`                                                 | ✅ **concluído sem erros** (`dist/assets/index-*.js`: `1.217,44 kB` / `358,25 kB` gzip — code-splitting é escopo do Marco 7C)                        |
+| **E2E Playwright (`e2e`)**    | `npm --prefix frontend run test:e2e`                                              | ✅ **2/2 fluxos aprovados** (`26,8s` em Chromium contra `stockflow_e2e` isolado: `inventory-approval.spec.ts` `6,6s` e `stock-cycle.spec.ts` `8,2s`) |
+| **Formatação (Prettier)**     | `npm run format:check`                                                            | ✅ **limpo (`All matched files use Prettier code style!`)**                                                                                          |
+| **Audit de produção**         | `npm audit --omit=dev` (raiz, `backend` e `frontend`)                             | ✅ **0 vulnerabilidades** nas 3 árvores (`found 0 vulnerabilities`)                                                                                  |
+| **Audit completo (dev)**      | `npm audit` (`backend` e `frontend`)                                              | ⚠️ **13 avisos `moderate`** (`GHSA-g3hv-75wg-m249` em `minimatch@10.2.6`, `devDependencies` apenas — **Risco aceito em D7B-1: Opção A**)             |
+| **Segredos e `.env`**         | `git ls-files` + checagem de chaves `SECRET`/`PASSWORD`/`TOKEN` em `.env.example` | ✅ **Apenas `.env.example` e `frontend/.env.example` rastreados; nenhum segredo preenchido**                                                         |
+
+**Contagem total de testes automatizados do projeto ao final do Marco 7B:**
+
+- Backend unitários e arquiteturais: **273 testes** (21 arquivos)
+- Backend integração (PostgreSQL real): **462 testes** (17 arquivos)
+- Frontend unitários e componentes: **258 testes** (36 arquivos)
+- E2E Playwright (Chromium + PostgreSQL `stockflow_e2e`): **2 fluxos completos** (2 arquivos)
+- **Total geral**: **995 testes/fluxos automatizados** (`100%` verdes).
+
+#### 3. Inventário final de arquivos do Marco 7B (24 arquivos: 20 modificados + 4 novos)
+
+- **Modificados (20)**:
+  1. `backend/src/audit/audit.service.ts`
+  2. `backend/src/audit/audit.service.spec.ts`
+  3. `backend/src/audit/dto/query-audit.dto.ts`
+  4. `backend/src/common/filters/all-exceptions.filter.ts`
+  5. `backend/src/common/filters/all-exceptions.filter.spec.ts`
+  6. `backend/src/common/utils/pagination.ts`
+  7. `backend/src/common/utils/pagination.spec.ts`
+  8. `backend/src/common/utils/transform.ts`
+  9. `backend/src/inventories/dto/open-inventory.dto.ts`
+  10. `backend/src/products/dto/product.dto.ts`
+  11. `backend/src/reports/dto/movements-report-query.dto.ts`
+  12. `backend/src/stock-movements/dto/query-movements.dto.ts`
+  13. `backend/src/suppliers/dto/supplier.dto.ts`
+  14. `backend/test/audit.int-spec.ts`
+  15. `backend/test/helpers/app.ts`
+  16. `backend/test/rbac.int-spec.ts`
+  17. `backend/test/reports.int-spec.ts`
+  18. `backend/test/stock-movements.int-spec.ts`
+  19. `docs/08-seguranca.md`
+  20. `docs/19-plano-fase-7.md`
+- **Novos (4)**: 21. `backend/src/architecture.spec.ts` 22. `backend/src/common/utils/date.validators.ts` 23. `backend/src/common/utils/date.validators.spec.ts` 24. `backend/src/common/utils/transform.spec.ts`
+
+#### 4. Riscos residuais e pendências explicitamente registrados
+
+1. **Abort nativo intermitente `0xC0000409` (`exit code 3221226505`) em Node `24.15.0` no Windows**:
+   - Mitigado em tempo (`-22,7%`, de `76,57s` para `~59,20s`) e custo de setup (`rbac.int-spec.ts` em `4,20s` com `5/5` aprovações), mas **não eliminado em definitivo** no runtime Windows (1 ocorrência em 5 rodadas na Subetapa `7B.1`, em `security.int-spec.ts`; 0 ocorrências na rodada da `7B.2`/`7B.3`; `0%` de ocorrência no CI Linux).
+2. **13 avisos `moderate` de `minimatch@10.2.6` (`GHSA-g3hv-75wg-m249`) em `devDependencies`**:
+   - Aceitos temporariamente conforme **Decisão D7B-1: Opção A**, com `npm audit --omit=dev` mantendo **0 vulnerabilidades** em produção.
+3. **Itens de fases/marcos futuros (não pertencentes ao Marco 7B)**:
+   - Acessibilidade sistemática, code-splitting de bundle do frontend e responsividade: escopo do **Marco 7C**.
+   - Guard de `Origin`/`Referer` em `/auth/refresh` e `/auth/logout` (`S6`/`D7-4`) e demais itens de deploy (`D7-1`, `D7-5`, `D7-6`, `D7-7`, `D7-8`): escopo da **Fase 8**.
+
+#### 5. Checklist de preparação para publicação (`origin/main`)
+
+- [x] `HEAD` base confirmado em `3c9f052` (`main`, sincronizado com `origin/main`).
+- [x] Todas as suítes (`backend unit`, `backend int`, `frontend unit`, `frontend e2e`), `lint`, `typecheck`, `build` e `format:check` aprovadas.
+- [x] Diff restrito exclusivamente aos 24 arquivos do Marco 7B (nenhuma migration, lockfile ou workflow tocado).
+- [x] Decisões `D7B-1: Opção A` e `D7B-2: Opção A` e riscos residuais documentados com transparência (incluindo que o abort nativo `0xC0000409` em Node `24.15.0`/Windows permanece não resolvido).
+- [x] Autorização do responsável concedida para versionamento em commits lógicos e `git push origin main`.
+
+**Marco 7B tecnicamente aprovado na auditoria local (Subetapa 7B.3) e autorizado para publicação em `origin/main` (encerramento oficial condicionado à confirmação do GitHub Actions 100% verde).**
