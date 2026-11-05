@@ -90,6 +90,99 @@ describe('InventoryDetailPage', () => {
     vi.unstubAllGlobals();
   });
 
+  it('M7C-2: com nome/SKU no item, não dispara nenhum GET /products/:id', async () => {
+    const [item] = inventoryFixture().items;
+    mockApi(
+      inventoryFixture({
+        items: [{ ...item, productSku: 'FER-0001', productName: 'Chave de fenda' }],
+      }),
+    );
+    renderPage();
+
+    expect(await screen.findByText('Chave de fenda')).toBeInTheDocument();
+    expect(screen.getByText('FER-0001')).toBeInTheDocument();
+
+    const urls = vi.mocked(fetch).mock.calls.map((call) => call[0] as string);
+    expect(urls.some((url) => url.includes('/products/'))).toBe(false);
+    expect(urls.filter((url) => url.includes('/inventories/inv1'))).toHaveLength(1);
+  });
+
+  it('M7C-2: registrar uma contagem (PATCH sem nome/SKU) não reintroduz GET /products/:id', async () => {
+    const [base] = inventoryFixture().items;
+    const semContagem = {
+      ...base,
+      productSku: 'FER-0001',
+      productName: 'Chave de fenda',
+      countedQty: null,
+      divergence: null,
+      countedAt: null,
+      countedBy: null,
+      currentStock: null,
+      movedSinceCount: null,
+      movementsSinceCount: null,
+    };
+    let contado = false;
+
+    vi.mocked(fetch).mockImplementation((input, init) => {
+      const url = input as string;
+      const method = init?.method ?? 'GET';
+
+      if (url.endsWith('/inventories/inv1/items/item1/count') && method === 'PATCH') {
+        contado = true;
+        // Contrato real do PATCH: o item contado, sem `productSku`/`productName`.
+        return Promise.resolve(
+          jsonResponse(200, {
+            id: 'item1',
+            productId: 'p1',
+            expectedQty: '10.000',
+            countedQty: '8.000',
+            divergence: '-2.000',
+            countedAt: '2026-01-10T10:00:00.000Z',
+            countedBy: null,
+            currentStock: null,
+            movedSinceCount: null,
+            movementsSinceCount: null,
+          }),
+        );
+      }
+      if (url.endsWith('/inventories/inv1') && method === 'GET') {
+        const item = contado
+          ? { ...semContagem, countedQty: '8.000', divergence: '-2.000' }
+          : semContagem;
+
+        return Promise.resolve(
+          jsonResponse(200, inventoryFixture({ status: 'OPEN', items: [item] })),
+        );
+      }
+      throw new Error(`URL inesperada: ${method} ${url}`);
+    });
+
+    const user = userEvent.setup();
+    renderPage();
+
+    await screen.findByText('Chave de fenda');
+    await user.type(screen.getByLabelText('Quantidade contada para o item item1'), '8.000');
+    await user.click(screen.getByRole('button', { name: 'Salvar' }));
+
+    // A tela é atualizada por refetch do detalhe (que traz nome/SKU), não pela
+    // resposta do PATCH: o produto não pode sumir nem virar "Carregando…".
+    await waitFor(() => {
+      const gets = vi
+        .mocked(fetch)
+        .mock.calls.filter(
+          (call) =>
+            (call[0] as string).endsWith('/inventories/inv1') &&
+            (call[1]?.method ?? 'GET') === 'GET',
+        );
+      expect(gets).toHaveLength(2);
+    });
+    expect(await screen.findByText('Chave de fenda')).toBeInTheDocument();
+    expect(screen.queryByText('Carregando…')).not.toBeInTheDocument();
+
+    const urls = vi.mocked(fetch).mock.calls.map((call) => call[0] as string);
+    expect(urls.some((url) => url.includes('/products/'))).toBe(false);
+  });
+
   it('mostra os itens com esperado, contado, divergência e produto resolvido', async () => {
     mockApi(inventoryFixture());
     renderPage();

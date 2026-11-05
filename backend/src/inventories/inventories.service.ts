@@ -505,6 +505,8 @@ export class InventoriesService {
   private toItemDto(row: {
     id: string;
     product_id: string;
+    product_sku: string;
+    product_name: string;
     expected_qty: Prisma.Decimal | null;
     counted_qty: Prisma.Decimal | null;
     counted_at: Date | null;
@@ -518,6 +520,8 @@ export class InventoriesService {
     return {
       id: row.id,
       productId: row.product_id,
+      productSku: row.product_sku,
+      productName: row.product_name,
       expectedQty:
         row.expected_qty === null ? null : formatDecimalField(row.expected_qty, 'expectedQty'),
       countedQty:

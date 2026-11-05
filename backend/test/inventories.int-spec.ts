@@ -195,9 +195,18 @@ describe('Inventário (integração)', () => {
       const detalhe = await request(app.getHttpServer())
         .get(`/api/v1/inventories/${inventoryIdAberto}`)
         .set('Authorization', bearer(operator));
-      const corpoDetalhe = detalhe.body as { items: unknown[] };
+      const corpoDetalhe = detalhe.body as {
+        items: { productId: string; productSku?: string; productName?: string }[];
+      };
       expect(Array.isArray(corpoDetalhe.items)).toBe(true);
       expect(corpoDetalhe.items).toHaveLength(1);
+      // M7C-2: o detalhe embute SKU e nome do produto, para o frontend não
+      // precisar de um `GET /products/:id` por item.
+      expect(corpoDetalhe.items[0]).toMatchObject({
+        productId: p1.id,
+        productSku: p1.sku,
+        productName: p1.name,
+      });
     });
   });
 

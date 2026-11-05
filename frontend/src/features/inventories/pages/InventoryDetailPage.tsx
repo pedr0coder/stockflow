@@ -74,7 +74,13 @@ export function InventoryDetailPage(): ReactNode {
       id: 'product',
       header: 'Produto',
       enableSorting: false,
-      cell: ({ row }) => <InventoryProductCell productId={row.original.productId} />,
+      cell: ({ row }) => (
+        <InventoryProductCell
+          productId={row.original.productId}
+          productSku={row.original.productSku}
+          productName={row.original.productName}
+        />
+      ),
     },
     {
       id: 'expected',

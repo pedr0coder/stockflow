@@ -6,6 +6,7 @@ import { ProductNotFoundError } from '../common/errors/not-found.errors';
 import { BusinessRuleError, SkuAlreadyExistsError } from '../common/errors/resource.errors';
 import { resolveSortColumn, toSkipTake } from '../common/utils/pagination';
 import { searchTerm } from '../common/utils/search';
+import { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   PRODUCT_SORT_COLUMNS,
@@ -50,7 +51,14 @@ export class ProductsService {
             ],
           }
         : {}),
-      ...(query.stockStatus !== undefined
+      ...(query.stockStatus === 'out'
+        ? // Saldo zero é comparação coluna × valor, que o query builder expressa
+          // direto: sem a consulta auxiliar de ids (Marco 7C, M7C-2), o filtro
+          // compõe com os demais no mesmo `WHERE` e a listagem faz 2 queries
+          // (`findMany` + `count`) em vez de 3.
+          { currentStock: new Prisma.Decimal(0) }
+        : {}),
+      ...(query.stockStatus === 'low' || query.stockStatus === 'ok'
         ? { id: { in: await this.idsByStockStatus(query.stockStatus) } }
         : {}),
     };

@@ -23,6 +23,19 @@ export class InventoryItemDto {
   @ApiProperty()
   productId!: string;
 
+  /**
+   * SKU e nome do produto, vindos do mesmo `JOIN` que traz o saldo (Marco 7C,
+   * M7C-2). Existem para a tela de detalhe não precisar de um
+   * `GET /products/:id` por item. Opcionais no contrato: `PATCH
+   * .../items/:itemId/count` (registro de contagem) devolve só o item contado
+   * e não os carrega.
+   */
+  @ApiPropertyOptional({ type: String, example: 'PAR-M8-001' })
+  productSku?: string;
+
+  @ApiPropertyOptional({ type: String, example: 'Parafuso sextavado M8' })
+  productName?: string;
+
   @ApiPropertyOptional({ nullable: true, type: String, example: '40.000' })
   expectedQty!: string | null;
 

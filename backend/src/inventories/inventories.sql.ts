@@ -332,6 +332,8 @@ export async function readProductCurrentStock(
 export interface ItemDetailRow {
   id: string;
   product_id: string;
+  product_sku: string;
+  product_name: string;
   expected_qty: Prisma.Decimal | null;
   counted_qty: Prisma.Decimal | null;
   counted_at: Date | null;
@@ -345,13 +347,19 @@ export interface ItemDetailRow {
  * Detalhe dos itens, com `current_stock` ao vivo e a contagem de movimentos
  * do produto depois da contagem — os campos que deixam o `movedSinceCount`
  * (D18, §17.6.7) visível ANTES da aprovação.
+ *
+ * `product_sku` e `product_name` vêm do `JOIN products` que já existia por
+ * causa do `current_stock` (Marco 7C, M7C-2): sem eles, a tela de detalhe
+ * buscava cada produto por `GET /products/:id`, até 50 requisições por
+ * inventário aberto.
  */
 export function readItemsDetail(
   tx: Prisma.TransactionClient,
   inventoryId: string,
 ): Promise<ItemDetailRow[]> {
   return tx.$queryRaw<ItemDetailRow[]>`
-    SELECT ii.id::text, ii.product_id::text, ii.expected_qty, ii.counted_qty,
+    SELECT ii.id::text, ii.product_id::text, p.sku AS product_sku, p.name AS product_name,
+           ii.expected_qty, ii.counted_qty,
            ii.counted_at, ii.counted_by_id::text, u.name AS counted_by_name,
            p.current_stock,
            (

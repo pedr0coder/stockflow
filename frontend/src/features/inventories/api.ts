@@ -31,10 +31,15 @@ export interface InventoryUser {
  * ficarem inconsistentes com o que os gerou (comentário de
  * `InventoryItemDto`, backend/src/inventories/dto/inventory.dto.ts). Tudo
  * fica `null` até o item ser contado.
+ *
+ * `productSku`/`productName` vêm em `GET /inventories/:id` (Marco 7C, M7C-2) e
+ * são opcionais no tipo porque a resposta de `PATCH .../items/:id` não os traz.
  */
 export interface InventoryItem {
   id: string;
   productId: string;
+  productSku?: string;
+  productName?: string;
   expectedQty: string | null;
   countedQty: string | null;
   divergence: string | null;

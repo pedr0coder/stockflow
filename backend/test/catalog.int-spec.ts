@@ -655,6 +655,56 @@ describe('Catálogo (integração)', () => {
       expect(normal.body.meta.total).toBe(1);
     });
 
+    it('stockStatus=out combina com categoria, ativo, busca, paginação e ordenação (M7C-2)', async () => {
+      const alvo = await createCategory(prisma);
+      const outra = await createCategory(prisma);
+      const alfa = await createProduct(prisma, alvo.id, { name: 'Zerado Alfa', currentStock: '0' });
+      const beta = await createProduct(prisma, alvo.id, { name: 'Zerado Beta', currentStock: '0' });
+      const gama = await createProduct(prisma, alvo.id, {
+        name: 'Zerado Gama',
+        currentStock: '0',
+        isActive: false,
+      });
+      await createProduct(prisma, alvo.id, { name: 'Com saldo', currentStock: '5' });
+      await createProduct(prisma, outra.id, {
+        name: 'Zerado de outra categoria',
+        currentStock: '0',
+      });
+
+      type Pagina = { data: { id: string; name: string }[]; meta: { total: number } };
+      const consulta = async (filtros: string): Promise<Pagina> => {
+        const response = await comoGerente(
+          'get',
+          `/api/v1/products?stockStatus=out&categoryId=${alvo.id}${filtros}`,
+        );
+
+        expect(response.status).toBe(200);
+
+        return response.body as Pagina;
+      };
+
+      // Sem `isActive`, produto inativo continua entrando — como na consulta
+      // auxiliar de ids que o filtro direto substituiu.
+      const todos = await consulta('');
+      expect(todos.meta.total).toBe(3);
+      expect(todos.data.map((p) => p.id).sort()).toEqual([alfa.id, beta.id, gama.id].sort());
+
+      const ativos = await consulta('&isActive=true');
+      expect(ativos.data.map((p) => p.id).sort()).toEqual([alfa.id, beta.id].sort());
+
+      const inativos = await consulta('&isActive=false');
+      expect(inativos.data.map((p) => p.id)).toEqual([gama.id]);
+
+      const busca = await consulta('&search=Alfa');
+      expect(busca.data.map((p) => p.id)).toEqual([alfa.id]);
+
+      const pagina1 = await consulta('&limit=2&page=1&sort=name&order=asc');
+      const pagina2 = await consulta('&limit=2&page=2&sort=name&order=asc');
+      expect(pagina1.meta.total).toBe(3);
+      expect(pagina1.data.map((p) => p.name)).toEqual(['Zerado Alfa', 'Zerado Beta']);
+      expect(pagina2.data.map((p) => p.name)).toEqual(['Zerado Gama']);
+    });
+
     it('filtra por ativo, tratando o booleano da query string', async () => {
       const categoria = await createCategory(prisma);
       await createProduct(prisma, categoria.id, { isActive: true });
