@@ -50,6 +50,7 @@ export class CreateProductDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @Transform(trimValue)
   @MaxLength(1000)
   description?: string;
 

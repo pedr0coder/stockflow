@@ -1,7 +1,9 @@
-import { BadRequestException } from '@nestjs/common';
+import { HttpStatus } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
 import { buildPage } from '../dto/page.dto';
-import { resolveSortColumn, toSkipTake } from './pagination';
+import { isDomainError } from '../errors/domain.error';
+import { ErrorCode } from '../errors/error-codes';
+import { InvalidSortColumnError, resolveSortColumn, toSkipTake } from './pagination';
 
 const COLUNAS = ['name', 'sku', 'createdAt'] as const;
 
@@ -21,8 +23,18 @@ describe('resolveSortColumn', () => {
     expect(resolveSortColumn('', COLUNAS, 'name')).toBe('name');
   });
 
-  it('recusa coluna fora da lista', () => {
-    expect(() => resolveSortColumn('passwordHash', COLUNAS, 'name')).toThrow(BadRequestException);
+  it('recusa coluna fora da lista com InvalidSortColumnError (DomainError 400)', () => {
+    expect(() => resolveSortColumn('passwordHash', COLUNAS, 'name')).toThrow(
+      InvalidSortColumnError,
+    );
+
+    try {
+      resolveSortColumn('passwordHash', COLUNAS, 'name');
+    } catch (error) {
+      expect(isDomainError(error)).toBe(true);
+      expect((error as InvalidSortColumnError).httpStatus).toBe(HttpStatus.BAD_REQUEST);
+      expect((error as InvalidSortColumnError).code).toBe(ErrorCode.VALIDATION_ERROR);
+    }
   });
 
   it('recusa em vez de cair no padrão em silêncio', () => {
@@ -37,7 +49,7 @@ describe('resolveSortColumn', () => {
   });
 
   it('é sensível a maiúsculas: "SKU" não é "sku"', () => {
-    expect(() => resolveSortColumn('SKU', COLUNAS, 'name')).toThrow(BadRequestException);
+    expect(() => resolveSortColumn('SKU', COLUNAS, 'name')).toThrow(InvalidSortColumnError);
   });
 });
 

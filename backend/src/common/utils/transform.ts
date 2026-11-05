@@ -54,7 +54,7 @@ export function toBooleanValue({ value }: { value: unknown }): unknown {
   return value;
 }
 
-/** Converte para inteiro, preservando o original quando não for numérico. */
+/** Converte para inteiro, preservando o original quando não for um inteiro estrito. */
 export function toIntValue({ value }: { value: unknown }): unknown {
   if (typeof value === 'number') {
     return value;
@@ -64,7 +64,13 @@ export function toIntValue({ value }: { value: unknown }): unknown {
     return value;
   }
 
-  const parsed = Number.parseInt(value, 10);
+  const trimmed = value.trim();
 
-  return Number.isNaN(parsed) ? value : parsed;
+  if (!/^-?\d+$/.test(trimmed)) {
+    return value;
+  }
+
+  const parsed = Number.parseInt(trimmed, 10);
+
+  return Number.isSafeInteger(parsed) ? parsed : value;
 }

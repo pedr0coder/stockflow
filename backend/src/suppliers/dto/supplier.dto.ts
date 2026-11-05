@@ -50,12 +50,14 @@ export class CreateSupplierDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @Transform(trimValue)
   @MaxLength(30)
   phone?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @Transform(trimValue)
   @MaxLength(1000)
   notes?: string;
 }

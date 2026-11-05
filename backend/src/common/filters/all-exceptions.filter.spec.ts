@@ -14,6 +14,7 @@ import {
   SupplierNotFoundError,
   UserNotFoundError,
 } from '../errors/not-found.errors';
+import { InvalidSortColumnError } from '../utils/pagination';
 import { AllExceptionsFilter } from './all-exceptions.filter';
 
 /** Erro de negócio concreto, só para o teste. */
@@ -164,12 +165,27 @@ describe('AllExceptionsFilter', () => {
       });
     });
 
-    it('preserva mensagem própria quando a exceção traz uma', () => {
+    it('usa a mensagem canônica do status quando uma HttpException traz string solta (allowlist S12)', () => {
       const { host, captured } = makeHost();
 
-      filter.catch(new BadRequestException('SKU já cadastrado.'), host);
+      filter.catch(new BadRequestException('Invalid byte sequence in middleware X'), host);
 
-      expect(captured.body.message).toBe('SKU já cadastrado.');
+      expect(captured.status).toBe(HttpStatus.BAD_REQUEST);
+      expect(captured.body.code).toBe(ErrorCode.VALIDATION_ERROR);
+      expect(captured.body.message).toBe('Dados inválidos. Verifique os campos informados.');
+      expect(captured.body.details).toBeUndefined();
+    });
+
+    it('preserva a mensagem de InvalidSortColumnError por ser DomainError legítimo', () => {
+      const { host, captured } = makeHost();
+
+      filter.catch(new InvalidSortColumnError('passwordHash', ['name', 'sku']), host);
+
+      expect(captured.status).toBe(HttpStatus.BAD_REQUEST);
+      expect(captured.body.code).toBe(ErrorCode.VALIDATION_ERROR);
+      expect(captured.body.message).toBe(
+        'Ordenação inválida: "passwordHash". Valores aceitos: name, sku.',
+      );
     });
   });
 
@@ -263,12 +279,34 @@ describe('AllExceptionsFilter', () => {
       expect(captured.body.message).not.toContain('JSON');
     });
 
-    it('mas preserva mensagem em português escrita pelo projeto', () => {
+    it('substitui qualquer HttpException de framework ou biblioteca (mesmo sem casar regex antiga)', () => {
       const { host, captured } = makeHost();
 
-      filter.catch(new NotFoundException('Fornecedor não encontrado.'), host);
+      filter.catch(
+        new NotFoundException('Upstream adapter failed to resolve route /internal/debug'),
+        host,
+      );
 
-      expect(captured.body.message).toBe('Fornecedor não encontrado.');
+      expect(captured.status).toBe(HttpStatus.NOT_FOUND);
+      expect(captured.body.code).toBe(ErrorCode.NOT_FOUND);
+      expect(captured.body.message).toBe('Recurso não encontrado.');
+    });
+
+    it('nunca vaza detalhes de HttpException 5xx', () => {
+      const { host, captured } = makeHost();
+
+      filter.catch(
+        new HttpException(
+          { message: 'Pool exhausted at postgres://stockflow@10.0.0.5:5432', fields: ['secret'] },
+          HttpStatus.SERVICE_UNAVAILABLE,
+        ),
+        host,
+      );
+
+      expect(captured.status).toBe(HttpStatus.INTERNAL_SERVER_ERROR);
+      expect(captured.body.code).toBe(ErrorCode.INTERNAL_ERROR);
+      expect(captured.body.message).toBe('Erro interno. Tente novamente em alguns instantes.');
+      expect(captured.body.details).toBeUndefined();
     });
   });
 

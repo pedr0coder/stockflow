@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
@@ -8,6 +9,7 @@ import {
   IsUUID,
   MaxLength,
 } from 'class-validator';
+import { trimValue } from '../../common/utils/transform';
 
 /**
  * Abertura de inventário: seleciona de 1 a 200 produtos (docs/17-plano-fase-5.md
@@ -25,6 +27,7 @@ export class OpenInventoryDto {
   @ApiPropertyOptional({ maxLength: 500 })
   @IsOptional()
   @IsString()
+  @Transform(trimValue)
   @MaxLength(500)
   note?: string;
 }

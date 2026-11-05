@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDateString, IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
+import { IsIsoDateOrDateTime } from '../../common/utils/date.validators';
 import { MovementReason, MovementType } from '../../generated/prisma/enums';
 
 /**
@@ -46,12 +47,12 @@ export class QueryMovementsDto extends PaginationQueryDto {
    */
   @ApiPropertyOptional({ example: '2026-10-01' })
   @IsOptional()
-  @IsDateString({}, { message: 'dateFrom deve ser uma data ISO 8601 válida.' })
+  @IsIsoDateOrDateTime({ message: 'dateFrom deve ser uma data ISO 8601 válida.' })
   dateFrom?: string;
 
   /** Como `dateFrom`: sem horário, `dateTo` vale até o fim daquele dia (exclusivo o dia seguinte), em UTC. */
   @ApiPropertyOptional({ example: '2026-10-31' })
   @IsOptional()
-  @IsDateString({}, { message: 'dateTo deve ser uma data ISO 8601 válida.' })
+  @IsIsoDateOrDateTime({ message: 'dateTo deve ser uma data ISO 8601 válida.' })
   dateTo?: string;
 }

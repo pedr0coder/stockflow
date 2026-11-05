@@ -484,6 +484,34 @@ describe('Movimentações de estoque (integração)', () => {
 
       expect(response.status).toBe(400);
     });
+
+    it('M7B-4: rejeita datas malformadas/inexistentes e inteiros com sufixo ou decimais com 400 (nunca 500)', async () => {
+      for (const queryInvalida of [
+        'dateFrom=2026-W01',
+        'dateFrom=20260101',
+        'dateFrom=2026-02-31',
+        'dateTo=2026-02-29',
+        'dateTo=2026-04-31',
+        'page=1abc',
+        'limit=20xyz',
+        'limit=10.5',
+      ]) {
+        const response = await request(app.getHttpServer())
+          .get(`/api/v1/stock-movements?${queryInvalida}`)
+          .set('Authorization', bearer(operator));
+
+        expect(response.status).toBe(400);
+        expect(response.body.code).toBe('VALIDATION_ERROR');
+      }
+
+      const valida = await request(app.getHttpServer())
+        .get(
+          '/api/v1/stock-movements?dateFrom=2024-02-29T00:00:00Z&dateTo=2026-12-31T23:59:59-03:00',
+        )
+        .set('Authorization', bearer(operator));
+
+      expect(valida.status).toBe(200);
+    });
   });
 
   describe('GET /products/:id/movements', () => {

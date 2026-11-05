@@ -1,4 +1,23 @@
-import { BadRequestException } from '@nestjs/common';
+import { HttpStatus } from '@nestjs/common';
+import { DomainError } from '../errors/domain.error';
+import { ErrorCode } from '../errors/error-codes';
+
+/**
+ * Coluna de ordenação fora da allowlist do recurso.
+ *
+ * Herda de `DomainError` para que o `AllExceptionsFilter` opere em regime de
+ * allowlist estrita (apenas `DomainError` expõe `exception.message` ao
+ * cliente; qualquer `HttpException` de framework ou biblioteca recebe a
+ * mensagem canônica de `STATUS_TO_MESSAGE`).
+ */
+export class InvalidSortColumnError extends DomainError {
+  override readonly code = ErrorCode.VALIDATION_ERROR;
+  override readonly httpStatus = HttpStatus.BAD_REQUEST;
+
+  constructor(requested: string, allowed: readonly string[]) {
+    super(`Ordenação inválida: "${requested}". Valores aceitos: ${allowed.join(', ')}.`);
+  }
+}
 
 /**
  * Resolve a coluna de ordenação contra uma allowlist.
@@ -26,9 +45,7 @@ export function resolveSortColumn<T extends string>(
   const match = allowed.find((column) => column === requested);
 
   if (!match) {
-    throw new BadRequestException(
-      `Ordenação inválida: "${requested}". Valores aceitos: ${allowed.join(', ')}.`,
-    );
+    throw new InvalidSortColumnError(requested, allowed);
   }
 
   return match;

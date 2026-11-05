@@ -38,47 +38,32 @@ const SERVER_ERROR_THRESHOLD = 500;
 const CLIENT_ERROR_THRESHOLD = 400;
 
 /**
- * Mensagens geradas por framework ou biblioteca, que NÃO vão para o cliente.
+ * Política de allowlist estrita para mensagens de erro (Marco 7B / S12).
  *
  * ┌────────────────────────────────────────────────────────────────────────────┐
- * │ O contrato (§2.6) diz que `message` é texto para o usuário final, em      │
- * │ português. Algumas exceções chegam aqui com mensagem escrita pelo Nest ou │
- * │ por biblioteca, em inglês e citando detalhe interno:                      │
+ * │ O contrato (§2.6) estabelece que `message` é texto seguro para o usuário  │
+ * │ final, em português, e que detalhes internos de framework, biblioteca ou  │
+ * │ infraestrutura jamais devem vazar na resposta HTTP.                        │
  * │                                                                            │
- * │   Cannot GET /caminho                        rota inexistente              │
- * │   ThrottlerException: Too Many Requests      nome da classe do guard       │
- * │   Expected property name or '}' in JSON at position 1   corpo malformado   │
+ * │ Em vez de uma blocklist de expressões regulares (`FRAMEWORK_MESSAGES`,     │
+ * │ que só bloqueava padrões já conhecidos depois de terem vazado), este       │
+ * │ filtro opera por **allowlist estrita**:                                    │
  * │                                                                            │
- * │ Quando o padrão casa, o filtro trata a exceção como "sem mensagem própria" │
- * │ e aplica o texto padrão do status.                                        │
- * │                                                                            │
- * │ É uma lista de exclusão, e isso tem o defeito óbvio de listas de exclusão: │
- * │ a próxima mensagem de framework não estará aqui. Os `NotFoundException`    │
- * │ dos services já viraram `DomainError` (`not-found.errors.ts`), que não     │
- * │ passa por esta lista, mas ela segue necessária: o `BadRequestException`    │
- * │ de `pagination.ts` ainda carrega mensagem do projeto dentro de uma         │
- * │ exceção do framework, e as do Nest (`Cannot GET`, `ThrottlerException`)    │
- * │ continuam chegando aqui. Inverter a regra para "só mensagem de             │
- * │ `DomainError`" exigiria converter também esse caso, e fica para quando     │
- * │ houver outro motivo para mexer nele.                                      │
- * │                                                                            │
- * │ Os dois últimos padrões entraram porque os testes de segurança pegaram as  │
- * │ mensagens vazando na resposta.                                            │
+ * │   1. `isDomainError(exception)` → erro de negócio nosso (`DomainError`):   │
+ * │      expõe `exception.message`, `exception.code`, `exception.httpStatus`   │
+ * │      e `exception.details` (quando definido).                              │
+ * │   2. `HttpException` (NestJS, guards, pipes, rotas inexistentes, etc.) →   │
+ * │      NUNCA expõe `exception.message`; usa sempre a mensagem canônica de    │
+ * │      `STATUS_TO_MESSAGE[statusCode]` (ou `GENERIC_CLIENT_MESSAGE` para     │
+ * │      4xx não tabelado / `GENERIC_SERVER_MESSAGE` para 5xx), preservando    │
+ * │      apenas `details.fields` quando a exceção vem do `ValidationPipe`.     │
+ * │   3. Outros erros → se trouxerem status 4xx válido de middleware           │
+ * │      (`body-parser`), usam `STATUS_TO_MESSAGE`; qualquer outro caso        │
+ * │      retorna 500 `INTERNAL_ERROR` com `GENERIC_SERVER_MESSAGE`.            │
  * └────────────────────────────────────────────────────────────────────────────┘
  */
-const FRAMEWORK_MESSAGES: readonly RegExp[] = [
-  /^Cannot (GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD) \//,
-  /^\w+Exception: /,
-  /in JSON at position \d+/,
-  /^Unexpected (token|end of JSON input)/,
-];
 
-/** `true` quando a mensagem foi escrita por framework, e não por este projeto. */
-function isFrameworkMessage(message: string): boolean {
-  return FRAMEWORK_MESSAGES.some((pattern) => pattern.test(message));
-}
-
-/** Texto padrão por status, usado quando a exceção não traz mensagem própria. */
+/** Texto padrão por status, usado para qualquer erro que não seja `DomainError`. */
 const STATUS_TO_MESSAGE: Readonly<Record<number, string>> = {
   [HttpStatus.BAD_REQUEST]: 'Dados inválidos. Verifique os campos informados.',
   [HttpStatus.UNAUTHORIZED]: 'Sessão inválida ou expirada. Entre novamente.',
@@ -164,15 +149,21 @@ export class AllExceptionsFilter implements ExceptionFilter {
     }
 
     if (exception instanceof HttpException) {
-      const statusCode = exception.getStatus();
-      const { message, details } = this.unwrapHttpException(exception);
-      const fallback = STATUS_TO_MESSAGE[statusCode] ?? GENERIC_SERVER_MESSAGE;
+      const rawStatus = exception.getStatus();
+      const isServerError = rawStatus >= SERVER_ERROR_THRESHOLD;
+      const statusCode = isServerError ? HttpStatus.INTERNAL_SERVER_ERROR : rawStatus;
+      const details = isServerError ? undefined : this.extractValidationDetails(exception);
+      const fallback = isServerError
+        ? GENERIC_SERVER_MESSAGE
+        : (STATUS_TO_MESSAGE[statusCode] ?? GENERIC_CLIENT_MESSAGE);
 
       return {
         ...base,
         statusCode,
-        code: STATUS_TO_CODE[statusCode] ?? ErrorCode.INTERNAL_ERROR,
-        message: message ?? fallback,
+        code: isServerError
+          ? ErrorCode.INTERNAL_ERROR
+          : (STATUS_TO_CODE[statusCode] ?? ErrorCode.VALIDATION_ERROR),
+        message: fallback,
         ...(details !== undefined ? { details } : {}),
       };
     }
@@ -218,39 +209,27 @@ export class AllExceptionsFilter implements ExceptionFilter {
   }
 
   /**
-   * Extrai mensagem e detalhes de uma `HttpException`.
+   * Extrai exclusivamente os detalhes estruturados de validação (`details.fields`)
+   * quando a `HttpException` provém do `ValidationPipe`.
    *
-   * Devolve `message: undefined` quando a exceção não tem mensagem própria, e
-   * nesse caso quem chama aplica o texto padrão do status.
-   *
-   * O ValidationPipe lança `BadRequestException` cujo corpo tem `message` como
-   * **array** de strings, uma por campo inválido. Jogar esse array no campo
-   * `message` daria ao usuário um texto ilegível, então ele vai para `details`
-   * e `message` fica com a frase única do status.
+   * Pela política de allowlist estrita (S12), strings avulsas em `HttpException`
+   * nunca são repassadas para `message` nem para `details`: todo erro de
+   * negócio legítimo do projeto herda de `DomainError`.
    */
-  private unwrapHttpException(exception: HttpException): {
-    message: string | undefined;
-    details?: unknown;
-  } {
+  private extractValidationDetails(exception: HttpException): { fields: unknown } | undefined {
     const payload = exception.getResponse();
 
-    // Erro de validação: `validationExceptionFactory` já entregou os campos
-    // nomeados, e `message` fica com a frase única do status.
     if (typeof payload === 'object' && payload !== null && 'fields' in payload) {
-      return { message: undefined, details: { fields: payload.fields } };
+      return { fields: payload.fields };
     }
 
     const raw = typeof payload === 'string' ? payload : (payload as { message?: unknown }).message;
 
     if (Array.isArray(raw)) {
-      return { message: undefined, details: { fields: raw } };
+      return { fields: raw };
     }
 
-    if (typeof raw === 'string' && raw.length > 0) {
-      return { message: isFrameworkMessage(raw) ? undefined : raw };
-    }
-
-    return { message: undefined };
+    return undefined;
   }
 }
 

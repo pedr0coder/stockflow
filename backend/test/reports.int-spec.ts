@@ -185,6 +185,34 @@ describe('Dashboard e relatórios (integração)', () => {
         .get('/api/v1/reports/movements?dateFrom=2099-01-01')
         .set('Authorization', bearer(operator));
       expect(futuro.body).toEqual([]);
+
+      // M7B-4: datas ISO válidas com fuso horário e ano bissexto são aceitas (200),
+      // enquanto strings como semana ISO ('2026-W01'), formato básico ('20260101')
+      // ou datas inexistentes ('2026-02-31') retornam 400 VALIDATION_ERROR (nunca 500).
+      const comTimezone = await request(app.getHttpServer())
+        .get('/api/v1/reports/movements?dateFrom=2024-02-29&dateTo=2099-12-31T23:59:59.000-03:00')
+        .set('Authorization', bearer(operator));
+      expect(comTimezone.status).toBe(200);
+
+      for (const dataInvalida of ['2026-W01', '20260101', '2026-02-31', '2026-02-29']) {
+        const invalidaFrom = await request(app.getHttpServer())
+          .get(`/api/v1/reports/movements?dateFrom=${dataInvalida}`)
+          .set('Authorization', bearer(operator));
+        expect(invalidaFrom.status).toBe(400);
+        expect(invalidaFrom.body.code).toBe('VALIDATION_ERROR');
+
+        const invalidaTo = await request(app.getHttpServer())
+          .get(`/api/v1/reports/movements?dateTo=${dataInvalida}`)
+          .set('Authorization', bearer(operator));
+        expect(invalidaTo.status).toBe(400);
+        expect(invalidaTo.body.code).toBe('VALIDATION_ERROR');
+      }
+
+      const daysInvalido = await request(app.getHttpServer())
+        .get('/api/v1/dashboard/movements-chart?days=15.9')
+        .set('Authorization', bearer(operator));
+      expect(daysInvalido.status).toBe(400);
+      expect(daysInvalido.body.code).toBe('VALIDATION_ERROR');
     });
 
     it('inventories e divergences são restritos a A/M; stock-reconciliation só a A', async () => {
