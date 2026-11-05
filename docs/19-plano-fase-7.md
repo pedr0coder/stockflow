@@ -1591,6 +1591,399 @@ DomainError` e mudar `AllExceptionsFilter` de blocklist (`FRAMEWORK_MESSAGES`) p
 - [x] Todas as suítes (`backend unit`, `backend int`, `frontend unit`, `frontend e2e`), `lint`, `typecheck`, `build` e `format:check` aprovadas.
 - [x] Diff restrito exclusivamente aos 24 arquivos do Marco 7B (nenhuma migration, lockfile ou workflow tocado).
 - [x] Decisões `D7B-1: Opção A` e `D7B-2: Opção A` e riscos residuais documentados com transparência (incluindo que o abort nativo `0xC0000409` em Node `24.15.0`/Windows permanece não resolvido).
-- [x] Autorização do responsável concedida para versionamento em commits lógicos e `git push origin main`.
+- [x] Autorização do responsável concedida para versionamento em commits lógicos (`7f8374d`, `95d882c`, `c7d9d4d`, `4bb530f`) e `git push origin main`.
+- [x] GitHub Actions CI #13 do commit `4bb530f` confirmado 100% verde (jobs `backend`, `frontend`, `format`, `secrets-check` e `e2e`).
 
-**Marco 7B tecnicamente aprovado na auditoria local (Subetapa 7B.3) e autorizado para publicação em `origin/main` (encerramento oficial condicionado à confirmação do GitHub Actions 100% verde).**
+**Marco 7B oficialmente encerrado após confirmação do GitHub Actions CI #13 (`4bb530f`) 100% verde.**
+
+---
+
+## 19.18 Planejamento técnico detalhado do Marco 7C — Performance, Acessibilidade e Responsividade
+
+### 19.18.1 Contexto, baseline inicial e escopo do Marco 7C
+
+- **Repositório**: `C:\Users\pedro\Desktop\dev\stockflow`
+- **Branch**: `main`
+- **HEAD-base verificado**: `4bb530f` (`4bb530f6227c3f7978fdbdb1b2f25e01c5c468cc` — `docs: record marco 7b audit and validation results`), sincronizado com `origin/main` e com GitHub Actions CI #13 confirmado 100% verde.
+- **Baseline de testes automatizados**: **995 verificações automatizadas** (`273` testes unitários/arquiteturais de backend, `462` testes de integração de backend, `258` testes unitários/componentes de frontend e `2` fluxos E2E Playwright).
+- **Status de itens originalmente listados no §19.7 (`A4` e `A5`)**:
+  - **`A4` (`ProductPicker.tsx` — navegação por teclado, `aria-selected`, `aria-activedescendant` e remoção de `setTimeout` no `onBlur`)**: **já implementado e testado no Marco 7A** (`frontend/src/components/shared/ProductPicker.tsx` e `ProductPicker.spec.tsx`). Permanece apenas adicionar `aria-label` quando `ProductPicker` é usado fora de `FormField` na barra de filtros de `MovementsPage.tsx`.
+  - **`A5` (`ErrorBoundary.tsx` no topo da árvore React)**: **já implementado e testado no Marco 7A** (`frontend/src/components/shared/ErrorBoundary.tsx`, `ErrorBoundary.spec.tsx` e `frontend/src/main.tsx`).
+- **Restrições estritas do Marco 7C**:
+  - Não alterar migrations existentes nem criar novas migrations ou índices sem evidência empírica.
+  - Não quebrar contratos HTTP, autenticação JWT/refresh, RBAC (`ProtectedRoute`, `RoleGuard`), regras de negócio de estoque ou invariantes de auditoria.
+  - Preservar a identidade visual do StockFlow (Design System atual baseado em tokens OKLCH em `frontend/src/index.css`), sem redesign desnecessário.
+
+---
+
+### 19.18.2 Prioridade 1 — Performance Frontend (Radiografia do Bundle e Code-Splitting)
+
+#### 1. Diagnóstico empírico do bundle atual (`vite build`)
+
+O build de produção atual (`npm --prefix frontend run build`) emite um **único chunk JavaScript de `1.217,44 kB` (`1.188,9 KiB`, `358,25 kB` gzip)** (`dist/assets/index-*.js`), disparando o alerta do Vite (`Some chunks are larger than 500 kB after minification`).
+
+A inspeção programática da árvore de módulos do Rolldown/Vite revelou a composição exata do bundle minificado:
+
+| Grupo / Dependência                                                                         | Módulos | Tamanho minificado (`KiB`) | Participação no bundle | Onde é utilizado                                                        |
+| :------------------------------------------------------------------------------------------ | ------: | -------------------------: | ---------------------: | :---------------------------------------------------------------------- |
+| **`recharts` + `d3-*` + `victory-vendor`**                                                  |     304 |           **`302,27 KiB`** |              **25,4%** | **Exclusivamente** em `MovementsChart.tsx` (`DashboardPage.tsx`)        |
+| **Transitivos do Recharts (`es-toolkit`, `@reduxjs/toolkit`, `immer`, `reselect`, `clsx`)** |     105 |           **`~83,00 KiB`** |               **7,0%** | **Exclusivamente** em `recharts` (`MovementsChart.tsx`)                 |
+| **`react` + `react-dom` + `scheduler`**                                                     |      15 |           **`201,96 KiB`** |              **17,0%** | Core da aplicação (todas as rotas)                                      |
+| **Código da aplicação (`frontend/src/**` — 19 páginas + componentes + API)**                |     113 |           **`146,80 KiB`** |              **12,3%** | Importado 100% de forma estática em `frontend/src/router.tsx`           |
+| **`zod` + `react-hook-form` + `@hookform/resolvers`**                                       |      72 |           **`124,84 KiB`** |              **10,5%** | Formulários e schemas de validação                                      |
+| **`radix-ui` + `@floating-ui` + `react-remove-scroll` + `sonner` + `vaul`**                 |     160 |          **`~115,00 KiB`** |               **9,7%** | Primitivos de UI (`Dialog`, `Sheet`, `Select`, `DropdownMenu`, `Toast`) |
+| **`react-router` (`v7`)**                                                                   |      32 |            **`90,45 KiB`** |               **7,6%** | Roteamento SPA (`router.tsx`)                                           |
+| **`@tanstack/react-query` + `@tanstack/react-table`**                                       |     101 |            **`68,56 KiB`** |               **5,8%** | Cache HTTP e tabelas (`DataTable.tsx`)                                  |
+| **`lucide-react` (ícones c/ tree-shaking) + utilitários (`tailwind-merge`, `cva`)**         |      72 |           **`~56,00 KiB`** |               **4,7%** | Ícones e estilização                                                    |
+| **Total**                                                                                   | **974** |         **`1.188,91 KiB`** |             **100,0%** | Chunk monolítico único (`1.217,44 kB`)                                  |
+
+**Causas raízes comprovadas:**
+
+1. **Zero `React.lazy` em `frontend/src/router.tsx`**: todas as **19 páginas** (`LoginPage`, `DashboardPage`, `CategoriesPage`, `ProductsPage`, `ProductNewPage`, `ProductDetailPage`, `ProductEditPage`, `SuppliersPage`, `SupplierNewPage`, `SupplierDetailPage`, `MovementsPage`, `MovementNewPage`, `InventoriesPage`, `InventoryNewPage`, `InventoryDetailPage`, `ReportsPage`, `UsersPage`, `UserNewPage`, `UserDetailPage`, `AuditPage`, `DesignSystemPage`, `NotFoundPage`) são importadas estaticamente no topo de `router.tsx`.
+2. **Acoplamento estático do `recharts` (`~385 KiB` somando `d3-*` e `es-toolkit`/`@reduxjs/toolkit`)**: `DashboardPage.tsx` importa `MovementsChart.tsx` estaticamente, forçando o download e parse de toda a engine gráfica mesmo na tela de `/login` ou em fluxos operacionais (`/products`, `/movements`, `/inventories`).
+
+#### 2. Estratégia técnica proposta (`M7C-1`)
+
+1. **Code-splitting por rota em `frontend/src/router.tsx`**:
+   - Manter `AuthLayout`, `AppShell`, `ProtectedRoute` e `RoleGuard` importados **sincronamente** no chunk principal para garantir que a verificação de sessão (`useAuth`), os guards de RBAC e o esqueleto estrutural (`Header` + `Sidebar`) nunca sofram atraso ou flicker.
+   - Converter as páginas de rota em `React.lazy(...)` envolvidas por um wrapper `<Suspense fallback={<PageLoader />}>` silencioso e acessível (`role="status"`, `aria-live="polite"`, respeitando o layout de `AppShell`).
+2. **Lazy loading isolado do gráfico (`MovementsChart.tsx`) em `DashboardPage.tsx`**:
+   - Importar `MovementsChart` via `React.lazy` dentro de `DashboardPage.tsx`, usando `<Suspense fallback={<Skeleton className="h-[280px] w-full" />}>`. Assim, os KPIs (`StatCard`) e a tabela de movimentações recentes renderizam imediatamente enquanto o chunk de `recharts` carrega em paralelo apenas quando o Dashboard é aberto.
+3. **Particionamento determinístico de vendor chunks (`manualChunks`) em `frontend/vite.config.ts` (Decisão `D7-7`)**:
+   - Separar chunks estáveis de bibliotecas (`vendor-react`, `vendor-ui`, `vendor-forms`, `vendor-query-table`, `vendor-charts`) para maximizar cache HTTP de longo prazo e garantir que **nenhum chunk individual ultrapasse `500 kB`**, eliminando o warning do Vite sem suprimir `chunkSizeWarningLimit`.
+
+---
+
+### 19.18.3 Prioridade 2 — Performance Backend (Medições `EXPLAIN (ANALYZE, BUFFERS)` e Análise de Consultas)
+
+#### 1. Catálogo de índices existentes e metodologia de medição
+
+O banco `stockflow_e2e` (PostgreSQL 17 em container Docker local) possui **38 índices ativos** cobrindo todas as chaves primárias, constraints únicas e caminhos críticos de leitura:
+
+- `products`: `products_pkey (id)`, `products_sku_key (sku)`, `products_is_active_name_idx (is_active, name)`, `products_name_trgm_idx USING gin (name gin_trgm_ops)`, `products_category_id_idx (category_id)`, `products_supplier_id_idx (supplier_id)`.
+- `stock_movements`: `stock_movements_pkey (id)`, `stock_movements_created_at_idx (created_at DESC)`, `stock_movements_product_id_created_at_idx (product_id, created_at DESC)`, `stock_movements_type_created_at_idx (type, created_at DESC)`, `stock_movements_user_id_idx (user_id)`, `stock_movements_inventory_item_id_key (inventory_item_id)`.
+- `inventories` e `inventory_items`: `inventories_pkey (id)`, `inventories_code_key (code)`, `inventories_status_started_at_idx (status, started_at DESC)`, `inventory_items_pkey (id)`, `inventory_items_inventory_id_product_id_key (inventory_id, product_id)`, `inventory_items_product_id_idx (product_id)`, `inventory_items_one_unfinalized_per_product (product_id) WHERE in_progress`.
+- `audit_logs`: `audit_logs_pkey (id)`, `audit_logs_created_at_idx (created_at DESC)`, `audit_logs_action_idx (action)`, `audit_logs_entity_entity_id_idx (entity, entity_id)`, `audit_logs_user_id_created_at_idx (user_id, created_at DESC)`.
+- `categories`, `suppliers`, `users`, `refresh_tokens`: índices compostos `(is_active, name)` / `(is_active, role)` e chaves únicas.
+
+Como o dataset de desenvolvimento/teste cabe em poucas páginas de `8 kB` (`46` produtos, `72` movimentações, `86` logs de auditoria), o otimizador de custo do PostgreSQL escolhe `Seq Scan` quando toda a tabela reside em `1–2` buffers de memória (`shared hit=1..2`). Para comprovar se os índices existentes cobrem as consultas em escala de produção, cada consulta crítica foi medida em dois modos:
+
+1. **Planner padrão (`enable_seqscan = on`)**;
+2. **Verificação forçada de cobertura de índice (`SET LOCAL enable_seqscan = off` em transação `READ ONLY`)**.
+
+#### 2. Resultados reais de `EXPLAIN (ANALYZE, BUFFERS)` nas 14 consultas críticas
+
+| ID      | Endpoint / Consulta Crítica                                    | Plano (Default Planner)                                                        | Tempo (Default) | Plano (`enable_seqscan = off` — Escala)                                                                                          |     Buffers / Tempo (Escala) | Diagnóstico de Índice                                                                  |
+| :------ | :------------------------------------------------------------- | :----------------------------------------------------------------------------- | --------------: | :------------------------------------------------------------------------------------------------------------------------------- | ---------------------------: | :------------------------------------------------------------------------------------- |
+| **Q1**  | `GET /products?isActive=true&sort=name&order=asc`              | `Sort (top-N heapsort)` -> `Seq Scan on products`                              |      `0,067 ms` | `Limit` -> **`Index Scan using products_is_active_name_idx`** (sem `Sort` em memória!)                                           |  `shared hit=2` / `0,094 ms` | ✅ Coberto por `products_is_active_name_idx`                                           |
+| **Q2**  | `GET /products?search=parafuso` (`ILIKE` em `name`/`sku`)      | `Sort` -> `Seq Scan on products`                                               |      `0,069 ms` | `Index Scan using products_is_active_name_idx` + filtro textual (`products_name_trgm_idx` disponível p/ `name ILIKE`)            |  `shared hit=2` / `0,057 ms` | ✅ Coberto (`products_is_active_name_idx` + `products_name_trgm_idx`)                  |
+| **Q3**  | `GET /products?stockStatus=low` (`current_stock <= min_stock`) | `Sort` -> `Seq Scan on products`                                               |      `0,034 ms` | `Index Scan using products_is_active_name_idx` + `Filter: (current_stock > 0 AND current_stock <= min_stock)`                    |  `shared hit=2` / `0,033 ms` | ✅ Coberto (B-Tree padrão não indexa comparação entre 2 colunas variáveis; ver abaixo) |
+| **Q4**  | `GET /stock-movements?page=1&limit=20`                         | `Incremental Sort` -> **`Index Scan using stock_movements_created_at_idx`**    |      `0,137 ms` | `Incremental Sort` -> **`Index Scan using stock_movements_created_at_idx`** + `Memoize Index Scan on users_pkey`                 |  `shared hit=6` / `0,067 ms` | ✅ Coberto por `stock_movements_created_at_idx`                                        |
+| **Q5**  | `GET /products/:id/movements`                                  | `Sort` -> `Seq Scan on stock_movements`                                        |      `0,043 ms` | **`Bitmap Index Scan on stock_movements_product_id_created_at_idx`**                                                             |  `shared hit=3` / `0,061 ms` | ✅ Coberto por `stock_movements_product_id_created_at_idx`                             |
+| **Q6**  | `GET /stock-movements?type=OUT&dateFrom=...`                   | `Sort` -> `Seq Scan on stock_movements`                                        |      `0,038 ms` | **`Bitmap Index Scan on stock_movements_type_created_at_idx`**                                                                   |  `shared hit=3` / `0,137 ms` | ✅ Coberto por `stock_movements_type_created_at_idx`                                   |
+| **Q7**  | `GET /inventories?status=OPEN`                                 | `Hash Join` -> **`Bitmap Index Scan on inventories_status_started_at_idx`**    |      `0,118 ms` | `Nested Loop` -> **`Bitmap Index Scan on inventories_status_started_at_idx`** + `Index Scan using users_pkey`                    |  `shared hit=2` / `0,067 ms` | ✅ Coberto por `inventories_status_started_at_idx`                                     |
+| **Q8**  | `GET /audit?page=1&limit=20`                                   | `Limit` -> **`Index Scan using audit_logs_created_at_idx`**                    |      `0,134 ms` | `Limit` -> **`Index Scan using audit_logs_created_at_idx`**                                                                      |  `shared hit=3` / `0,035 ms` | ✅ Coberto por `audit_logs_created_at_idx`                                             |
+| **Q9**  | `GET /dashboard/summary` (4 subconsultas KPI)                  | 4 `InitPlan` (`Seq Scan` em `products` [1 pág.] e `stock_movements` [2 págs.]) |      `0,119 ms` | `Index Only Scan` / `Index Scan on products_is_active_name_idx` + `Bitmap Index Scan on stock_movements_type_created_at`         |  `shared hit=9` / `0,134 ms` | ✅ Coberto (4 subqueries em 1 único roundtrip SQL; `0,119 ms`)                         |
+| **Q10** | `GET /dashboard/movements-chart?days=30`                       | `Sort` -> `HashAggregate` -> `Seq Scan on stock_movements`                     |      `0,208 ms` | `HashAggregate` -> **`Bitmap Index Scan on stock_movements_created_at_idx`**                                                     |  `shared hit=3` / `0,085 ms` | ✅ Coberto por `stock_movements_created_at_idx`                                        |
+| **Q11** | `GET /dashboard/recent-movements?limit=10`                     | `Incremental Sort` -> **`Index Scan using stock_movements_created_at_idx`**    |      `0,176 ms` | `Incremental Sort` -> **`Index Scan using stock_movements_created_at_idx`** + `Memoize` em `products_pkey`/`users_pkey`          | `shared hit=20` / `0,110 ms` | ✅ Coberto por `stock_movements_created_at_idx`                                        |
+| **Q12** | `GET /reports/movements`                                       | `Sort` -> `HashAggregate` -> `Seq Scan on stock_movements`                     |      `0,090 ms` | `HashAggregate` -> **`Bitmap Index Scan on stock_movements_created_at_idx`**                                                     |  `shared hit=3` / `0,097 ms` | ✅ Coberto por `stock_movements_created_at_idx`                                        |
+| **Q13** | `GET /reports/inventories`                                     | `Sort` -> `HashAggregate` -> `Hash Left/Right Join`                            |      `0,142 ms` | `HashAggregate` -> `Merge Left Join` usando `inventory_items_pkey`, `stock_movements_inventory_item_id_key` e `inventories_pkey` |  `shared hit=8` / `0,287 ms` | ✅ Coberto pelos índices de FK/UK                                                      |
+| **Q14** | `GET /reports/stock-reconciliation`                            | `Sort` -> `Hash Join` -> `HashAggregate` em `stock_movements`                  |      `0,103 ms` | `Merge Join` -> `GroupAggregate` via **`Index Scan using stock_movements_product_id_created_at_idx`** + `products_pkey`          |  `shared hit=7` / `0,105 ms` | ✅ Coberto por `stock_movements_product_id_created_at_idx`                             |
+
+**Conclusão sobre índices no banco de dados**:
+
+- **Nenhum novo índice ou migration é necessário.** Todas as 14 consultas críticas executam entre **`0,034 ms` e `0,287 ms`** e já dispõem de índices B-Tree/GIN adequados para quando a cardinalidade crescer.
+
+#### 3. Dois gargalos reais de acesso a dados identificados na aplicação (sem criar índices)
+
+Embora os índices do PostgreSQL estejam completos, a auditoria conjunta backend/frontend revelou **dois padrões ineficientes de consulta na camada de aplicação**:
+
+1. **Ineficiência no backend — Tripla query com materialização de todos os UUIDs em memória em `ProductsService.findAll` quando `stockStatus` é filtrado (`backend/src/products/products.service.ts:53-55, 161-184`)**:
+   - **Problema e evidência**: quando `GET /api/v1/products?stockStatus=low|out|ok` é chamado, `this.idsByStockStatus(query.stockStatus)` executa uma primeira query `$queryRaw` (`SELECT id FROM products WHERE ...`) **sem `LIMIT` e sem filtrar por `categoryId`/`supplierId`/`isActive`**, carrega todos os UUIDs na memória do Node e injeta `where.id = { in: ids }` tanto em `prisma.product.findMany` quanto em `prisma.product.count`. Isso gera **3 roundtrips ao banco** e serializa um array potencialmente grande de UUIDs duas vezes como parâmetros de bind (`$1, $2, ...`).
+   - **Adicionalmente**, para `stockStatus=out` (`current_stock = 0`), a condição é uma igualdade simples com constante (`currentStock: new Prisma.Decimal(0)`) que o Prisma suporta nativamente no `WhereInput` sem precisar de `$queryRaw`! E para `low` (`current_stock > 0 AND current_stock <= min_stock`) e `ok` (`current_stock > min_stock`), se mantivermos o filtro ou a consulta, podemos otimizar `stockStatus=out` diretamente no `Prisma.ProductWhereInput` (eliminando a 3ª query) e restringir `idsByStockStatus` apenas às linhas ativas/filtradas.
+2. **Gargalo crítico N+1 HTTP entre Frontend e Backend na tela de Detalhe do Inventário (`InventoryDetailPage.tsx` + `InventoryProductCell.tsx`)**:
+   - **Problema e evidência**: em `backend/src/inventories/inventories.sql.ts:350-369` (`readItemsDetail`), a query SQL do backend **já faz `JOIN products p ON p.id = ii.product_id`** para ler `p.current_stock`. Contudo, ela seleciona apenas `ii.product_id` e não retorna `p.sku` nem `p.name`. Como consequência, em `frontend/src/features/inventories/components/InventoryProductCell.tsx:16`, cada célula da tabela dispara `useProductQuery(productId)` (`GET /api/v1/products/:id`).
+   - **Impacto real medido**: `InventoryDetailPage.tsx:259` usa `pageSize={50}` (e um inventário suporta até `MAX_INVENTORY_PRODUCTS = 200`). Ao abrir um inventário com 50 itens, o navegador dispara **1 requisição `GET /inventories/:id` + 50 requisições individuais `GET /products/:id`** (totalizando **51 requisições HTTP simultâneas** na abertura de uma única tela, podendo atingir até 101 requisições se o usuário paginar e esbarrar no `ThrottlerGuard` global de `100 req/60s`!).
+   - **Solução cirúrgica e retrocompatível (`M7C-2`)**: incluir `p.sku AS product_sku, p.name AS product_name` na projeção do `JOIN products p` que **já existe** em `readItemsDetail` (`backend/src/inventories/inventories.sql.ts:350-369`), expor `productSku?: string` e `productName?: string` como campos adicionais opcionais em `InventoryItemDto` (100% retrocompatível com contratos existentes) e fazer `InventoryProductCell.tsx` renderizar `productName` e `productSku` diretamente quando presentes (usando `useProductQuery` apenas como fallback se ausentes). O número de requisições HTTP ao abrir `InventoryDetailPage` cai de **51 para 1** (`-98%`).
+
+---
+
+### 19.18.4 Prioridade 3 — Acessibilidade (WCAG 2.2 AA, Teclado, Foco, Modais e Automação)
+
+#### 1. Auditoria matemática de contraste WCAG 2.2 AA nos tokens OKLCH (`frontend/src/index.css`)
+
+Convertendo os tokens primitivos `:root` de `frontend/src/index.css` (`OKLCH -> Oklab -> sRGB linear -> luminância relativa WCAG 2.1/2.2`), inclusive com composição alfa (`/10`, isto é, `10%` sobre `--sf-bg`), obtivemos os seguintes contrastes exatos:
+
+| Token CSS (`index.css`) | Valor atual              | Uso no sistema                                                                                               | Contraste c/ `--sf-bg` (branco) | Contraste sobre tint `/10` (`bg-(--color-*)/10`) | Status WCAG AA (texto `< 18pt`: mín. `4,5:1`)  |
+| :---------------------- | :----------------------- | :----------------------------------------------------------------------------------------------------------- | ------------------------------: | -----------------------------------------------: | :--------------------------------------------- |
+| `--sf-text`             | `oklch(21% 0.006 285)`   | Texto primário em páginas, tabelas e modais                                                                  |                   **`17,73:1`** |                                                — | ✅ Aprovado (AAA)                              |
+| `--sf-text-muted`       | `oklch(55.2% 0.014 285)` | Rótulos secundários, cabeçalhos de tabela e dicas                                                            |                    **`4,83:1`** |                           **`4,62:1`** (surface) | ✅ Aprovado (AA `>= 4,5:1`)                    |
+| `--sf-primary`          | `oklch(54.6% 0.215 262)` | Botões primários (texto branco `--sf-primary-fg`) e links                                                    |                    **`5,16:1`** |                                     **`4,50:1`** | ✅ Aprovado (AA `>= 4,5:1`)                    |
+| **`--sf-success`**      | `oklch(59.6% 0.145 163)` | `MovementTypeBadge` (`Entrada`), `InventoriesPage` (`Aprovado`), `StatCard` (`tone="success"`)               |                    **`3,67:1`** |                                     **`3,25:1`** | ❌ **REPROVADO AA (`< 4,5:1`)**                |
+| **`--sf-warning`**      | `oklch(68.1% 0.162 75)`  | `StockBadge` (`Estoque baixo`), `MovementTypeBadge` (`Ajuste`), `InventoriesPage`, `ReportsPage`, `StatCard` |                    **`2,93:1`** |                                     **`2,66:1`** | ❌ **REPROVADO AA (`< 4,5:1` e `< 3,0:1`)**    |
+| **`--sf-danger`**       | `oklch(57.7% 0.215 27)`  | `StockBadge` (`Sem estoque`), `MovementTypeBadge` (`Saída`), banners de erro (`bg-(--color-danger)/10`)      |                    **`4,83:1`** |                                     **`4,14:1`** | ❌ **REPROVADO AA sobre `/10` (`4,14 < 4,5`)** |
+
+**Ajuste cirúrgico de luminosidade (`L`) mantendo os mesmos matizes (`H = 163`, `75`, `27`) e a identidade visual (`M7C-3`):**
+
+| Token CSS (`index.css`) | Valor atual              | Valor proposto         | Novo contraste c/ `--sf-bg` (e texto branco em botão sólido) | Novo contraste sobre tint `/10` | Resultado WCAG 2.2 AA        |
+| :---------------------- | :----------------------- | :--------------------- | -----------------------------------------------------------: | ------------------------------: | :--------------------------- |
+| `--sf-success`          | `oklch(59.6% 0.145 163)` | `oklch(50% 0.145 163)` |                                                 **`5,33:1`** |                    **`4,63:1`** | ✅ **Aprovado (`>= 4,5:1`)** |
+| `--sf-warning`          | `oklch(68.1% 0.162 75)`  | `oklch(52% 0.145 75)`  |                                                 **`5,61:1`** |                    **`4,89:1`** | ✅ **Aprovado (`>= 4,5:1`)** |
+| `--sf-danger`           | `oklch(57.7% 0.215 27)`  | `oklch(53% 0.215 27)`  |                                                 **`5,90:1`** |                    **`4,92:1`** | ✅ **Aprovado (`>= 4,5:1`)** |
+
+> Com `L = 53%` em `--sf-danger`, os botões destrutivos sólidos (`bg-destructive text-white`) também sobem de `4,83:1` para **`5,90:1`**, e os badges/banners com fundo `bg-destructive/10 text-destructive` sobem de `4,14:1` para **`4,92:1`**.
+
+#### 2. Lacunas de semântica ARIA, teclado, foco e modais encontradas no código
+
+1. **Link "Pular para o conteúdo" ausente em `AppShell.tsx`**:
+   - Em `frontend/src/components/layout/AppShell.tsx:66`, `<main ref={contentRef} id="conteudo" tabIndex={-1}>` já foi preparado com comentário explícito para receber um skip link, mas a âncora `<a href="#conteudo" className="sr-only focus:not-sr-only ...">Pular para o conteúdo</a>` no topo do `AppShell` nunca foi adicionada.
+2. **13 componentes `<SelectTrigger>` (combobox) e 1 `ProductPicker` sem nome acessível (`aria-label`) nas barras de filtro (violação WCAG 4.1.2 `button-name` / `select-name`)**:
+   - `DashboardPage.tsx:141`: seletor de período (`7 dias`, `30 dias`, `90 dias`).
+   - `ProductsPage.tsx:220, 240, 258`: filtros de categoria, situação de estoque e status.
+   - `CategoriesPage.tsx:171`: filtro de status da categoria.
+   - `SuppliersPage.tsx:182`: filtro de status do fornecedor.
+   - `MovementsPage.tsx:141` (`ProductPicker` de filtro sem `aria-label`), `157` (filtro de tipo) e `176` (filtro de motivo).
+   - `InventoriesPage.tsx:118`: filtro de status do inventário.
+   - `ReportsPage.tsx:308`: seletor do tipo de relatório.
+   - `UsersPage.tsx:119, 139`: filtros de perfil e status.
+   - `UserDetailPage.tsx:224`: seletor de alteração de perfil (`Role`).
+3. **Perda de `aria-describedby` e `aria-invalid` em 5 `<SelectTrigger>` dentro de `<FormField>`**:
+   - `FormField.tsx:46-50` injeta `{ id, 'aria-describedby', 'aria-invalid' }` via render prop. Porém, em `ProductForm.tsx` (linhas `107`, `143`, `169` — unidade, categoria, fornecedor), `MovementEntryForm.tsx` (linha `142` — motivo) e `UserNewPage.tsx` (linha `94` — perfil), o `<SelectTrigger>` recebe apenas `id={field.id}`, descartando `aria-describedby` (nos 5 casos) e `aria-invalid` (em 4 casos). Basta repassar `aria-describedby={field['aria-describedby']}` e `aria-invalid={field['aria-invalid']}` ao `<SelectTrigger>`.
+4. **Acessibilidade de modais/drawers (`Sidebar.tsx` e `sheet.tsx`)**:
+   - Em `frontend/src/components/layout/Sidebar.tsx:48-54`, o `<SheetContent>` do menu mobile possui `<SheetTitle className="sr-only">Menu de navegação</SheetTitle>`, mas não possui `<SheetDescription className="sr-only">`, gerando warning de acessibilidade do Radix Dialog.
+   - Em `frontend/src/components/ui/sheet.tsx:77`, o botão de fechar anuncia `<span className="sr-only">Close</span>` em inglês em vez de `"Fechar"` (e sem `aria-label` explícito).
+5. **Célula de contagem de inventário (`InventoryCountCell.tsx`)**:
+   - Em `frontend/src/features/inventories/components/InventoryCountCell.tsx:67-91`, o `<Input>` numérico não referencia o `<span role="alert">` de erro via `aria-describedby`, não permite submeter a contagem com a tecla `Enter` (`onKeyDown`), e seu `aria-label` usa o UUID cru (`Quantidade contada para o item ${item.id}`) em vez do nome/SKU do produto quando disponível.
+
+#### 3. Avaliação de ferramentas de auditoria (`axe-core` e Lighthouse — Decisão `D7C-1`)
+
+- **`axe-core` em testes de componentes (`vitest-axe`) vs E2E (`@axe-core/playwright`)**:
+  - Os testes de componentes rodam em `jsdom`, que **não calcula layout nem `getComputedStyle` real para cores OKLCH/composição alfa** — portanto, o `axe-core` em `jsdom` valida apenas regras de marcação ARIA/DOM (`button-name`, `label`, `aria-valid-attr`), mas **não valida contraste real (`color-contrast`)**.
+  - Já no **Playwright (Chromium real)**, o motor Blink calcula estilos e contrastes reais. Além disso, o Playwright permite injetar ou executar verificação de regras WCAG 2.2 AA diretamente nas páginas reais renderizadas com banco `stockflow_e2e`.
+  - **Nota sobre dependências (`npm audit`)**: qualquer adição de pacote npm em `devDependencies` deve ser avaliada contra a política de zero novas vulnerabilidades do repositório. Podemos:
+    - **Opção A (Recomendada)**: validar automaticamente nos testes unitários/componentes (Vitest) as invariantes de marcação acessível (presença de `aria-label`, `aria-describedby`, `aria-invalid`, skip link, contraste matemático dos tokens CSS em `index.css` via teste dedicado) **sem instalar novas dependências npm** (preservando `package-lock.json` intacto), e executar auditoria `axe-core`/Lighthouse via script de inspeção descartável no Chromium durante a Subetapa `7C.3`.
+    - **Opção B**: instalar `@axe-core/playwright` em `frontend/package.json` (`devDependencies`) e integrá-lo à suíte E2E (`frontend/e2e/`).
+
+---
+
+### 19.18.5 Prioridade 4 — Responsividade (`375px`, `768px` e `1440px` — Decisão `D7-5`)
+
+#### 1. Auditoria das telas principais nos 3 breakpoints (`375px`, `768px`, `1440px`)
+
+| Tela / Fluxo                                  | `375px` (Mobile `< 640px`)                                                                                                                                                                                                | `768px` (Tablet `md`)                                                         | `1440px` (Desktop `xl`)                        | Problemas encontrados em `375px` / `768px`                                                                                                     |
+| :-------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :---------------------------------------------------------------------------- | :--------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`AppShell` + `Sidebar` + `Header`**         | Sidebar oculta (`hidden md:flex`); botão hambúrguer no `Header` abre `Sheet` lateral (`w-60`). Padding `p-4`.                                                                                                             | Sidebar fixa visível (`w-60`) + botão de colapsar (`w-16`). Padding `md:p-6`. | Sidebar expandida (`w-60`) + área útil ampla.  | Falta skip link `#conteudo` e `SheetDescription` no drawer mobile.                                                                             |
+| **`DashboardPage`**                           | KPIs em `grid-cols-1` (`sm:grid-cols-2`), gráfico `h-[280px]`, tabela de recentes.                                                                                                                                        | KPIs em `2x2` (`sm:grid-cols-2`), gráfico fluido.                             | KPIs em `lg:grid-cols-4`.                      | Tabela de movimentações recentes (6 colunas) exige scroll horizontal em `375px`; `renderCard` no `DataTable` elimina o scroll horizontal.      |
+| **`ProductsPage`**                            | Possui `renderCard` no `DataTable`; filtros empilham (`flex-col sm:flex-row`).                                                                                                                                            | Tabela de 6 colunas com `overflow-x-auto`.                                    | Tabela completa visível sem scroll.            | Em `375px`, os 3 `<SelectTrigger>` de filtro têm `w-44`/`w-48`/`w-36` fixos em vez de `w-full sm:w-*`.                                         |
+| **`CategoriesPage`**                          | **Sem `renderCard`**: tabela de 5 colunas (incluindo botões `Editar`/`Inativar`) força scroll horizontal em `375px`.                                                                                                      | Tabela cabe confortavelmente.                                                 | Tabela completa.                               | Falta `renderCard` mobile (com botões de ação `Editar` e `Inativar`/`Reativar`) e `w-full sm:w-36` no filtro.                                  |
+| **`SuppliersPage`**                           | Possui `renderCard` no `DataTable`.                                                                                                                                                                                       | Tabela de 6 colunas.                                                          | Tabela completa.                               | Filtro de status com `w-36` fixo em vez de `w-full sm:w-36`.                                                                                   |
+| **`MovementsPage` + `MovementNewPage`**       | **Sem `renderCard`**: tabela de 7 colunas força scroll horizontal intenso em `375px`. No filtro de período, 2 `<Input type="date">` lado a lado ficam espremidos (`~150px` cada).                                         | Filtros em grid `md:grid-cols-2`; tabela com scroll leve.                     | Filtros em `xl:grid-cols-4`; tabela completa.  | Falta `renderCard` em `MovementsPage`; par de `<Input type="date">` em `MovementsPage.tsx:190` precisa de `flex-col sm:flex-row`.              |
+| **`InventoriesPage` + `InventoryDetailPage`** | `InventoriesPage` **sem `renderCard`** (5 colunas). Em `InventoryDetailPage.tsx:195`, a barra de ações do `PageHeader` (` Badge` + `Enviar p/ aprovação` + `Cancelar`) **não tem `flex-wrap`**, podendo estourar `375px`. | Cabeçalho e cards de resumo (`sm:grid-cols-4`) bem distribuídos.              | Tabela de contagem operacional ampla.          | Falta `renderCard` em `InventoriesPage`; falta `flex-wrap` nas ações de `InventoryDetailPage.tsx:195`; resumo `sm:grid-cols-2 lg:grid-cols-4`. |
+| **`ReportsPage`**                             | Seletor `SelectTrigger className="w-72"` fixo e par de `<Input type="date">` lado a lado (`ReportsPage.tsx:242`) estouram ou espremem em `375px`.                                                                         | Filtros quebram linha com `flex-wrap`.                                        | 6 relatórios tabulares analíticos completos.   | Ajustar seletor para `w-full sm:w-72` e datas para `flex-col sm:flex-row` em `ReportsPage.tsx`.                                                |
+| **`UsersPage` + `UserDetailPage`**            | `UsersPage` **sem `renderCard`** (5 colunas). Em `UserDetailPage.tsx:198`, a linha com `SelectTrigger className="w-48"` + botão `Inativar` não tem `flex-wrap`.                                                           | Layout em 2 colunas (`lg:grid-cols-3` em desktop).                            | Completo.                                      | Adicionar `renderCard` em `UsersPage`, `w-full sm:w-*` nos filtros e `flex-wrap` em `UserDetailPage.tsx:198`.                                  |
+| **`AuditPage`**                               | **Sem `renderCard`**: tabela de 5 colunas + botão `Ver` exige scroll horizontal em `375px`.                                                                                                                               | Filtros em `sm:grid-cols-2` e tabela legível.                                 | Filtros em `lg:grid-cols-5` e tabela completa. | Adicionar `renderCard` em `AuditPage` (com botão `Ver` abrindo o `Sheet` de detalhes da auditoria).                                            |
+
+#### 2. Matriz de decisão para `D7-5` (Tabelas Mobile `< 640px`: `renderCard` vs `overflow-x-auto`)
+
+O componente `DataTable.tsx` já possui suporte nativo e testado à prop opcional `renderCard?: (row: TData) => ReactNode` (renderizando cards empilhados em `< 640px` (`sm:hidden`) e mantendo a `Table` em `>= 640px` (`hidden sm:block`)).
+
+Propomos a seguinte regra arquitetural clara para **D7-5**:
+
+1. **Listagens de navegação e consulta operacional (`ProductsPage`, `SuppliersPage`, `CategoriesPage`, `MovementsPage`, `InventoriesPage`, `UsersPage`, `AuditPage` e `DashboardPage` [movimentações recentes])**: usar **`renderCard` mobile (`< 640px`)**, garantindo leitura vertical imediata sem scroll horizontal em `375px` e preservando todas as ações da linha (`Editar`/`Inativar` em Categorias; `Ver` detalhes em Auditoria; links para detalhe/produto nas demais).
+2. **Tabelas densas de edição inline ou comparação analítica multicolunar (`InventoryDetailPage` [tabela de contagem física com input numérico por linha] e `ReportsPage` [6 relatórios analíticos comparativos])**: manter **tabela com `overflow-x-auto`** (já provido por `components/ui/table.tsx`), garantindo que a digitação sequencial de contagens e a comparação de colunas numéricas permaneçam alinhadas.
+
+---
+
+### 19.18.6 Prioridade 5 — Qualidade Visual, Hierarquia e Fluidez (`prefers-reduced-motion`)
+
+1. **Respeito global a `prefers-reduced-motion: reduce` (`A6`)**:
+   - Atualmente, `frontend/src/index.css` não declara regras para `@media (prefers-reduced-motion: reduce)`, fazendo com que `Skeleton` (`animate-pulse`), transições de abertura/fechamento de modais (`tw-animate-css` em `Sheet`, `AlertDialog`, `Select`, `DropdownMenu`) e a transição de largura da `Sidebar` (`transition-[width] duration-150`) executem animações mesmo quando o sistema operacional solicita redução de movimento.
+   - **Solução**: adicionar em `frontend/src/index.css` uma regra global `@media (prefers-reduced-motion: reduce)` que reduz `animation-duration`, `transition-duration` e `scroll-behavior` para valores instantâneos (`0.01ms !important` / `auto !important`).
+2. **Consistência de transições de carregamento em rotas lazy (`PageLoader`)**:
+   - Ao introduzir `React.lazy` nas rotas (`M7C-1`), o fallback `<Suspense>` utilizará um componente `PageLoader` discreto e consistente com o `Skeleton` do Design System (com `role="status"` e `aria-label="Carregando página"`), evitando saltos de layout (CLS) dentro do `AppShell`.
+
+---
+
+### 19.18.7 Catálogo consolidado de propostas do Marco 7C (`M7C-1` a `M7C-5`)
+
+#### Proposta `M7C-1` — Code-splitting por rota, lazy loading de `MovementsChart` e otimização de chunks (`D7-6` e `D7-7`)
+
+- **Problema**: bundle único de `1.217,44 kB` (`358,25 kB` gzip) carregado integralmente em qualquer rota (inclusive `/login`), contendo `~385 KiB` do `recharts` + `d3-*` + `es-toolkit` usados em apenas 1 componente (`MovementsChart.tsx`) e todas as 19 páginas importadas estaticamente em `router.tsx`.
+- **Evidência**: saída do `vite build` (`dist/assets/index-*.js` com `1.217,44 kB` e warning `> 500 kB`) e análise de módulos do Rolldown (§19.18.2).
+- **Benefício esperado**: redução de **> 50%** no JavaScript transferido/parseado na carga inicial de `/login` e das rotas operacionais; isolamento de `recharts` em chunk sob demanda; eliminação do warning de `> 500 kB` do Vite.
+- **Risco**: Baixo. `ProtectedRoute`, `RoleGuard`, `AuthLayout` e `AppShell` permanecem síncronos; testes existentes de `router.tsx` e páginas continuam funcionando com `findBy*` / `waitFor`.
+- **Arquivos afetados**:
+  - `frontend/src/router.tsx`
+  - `frontend/src/features/dashboard/pages/DashboardPage.tsx`
+  - `frontend/vite.config.ts`
+- **Critérios de aceite mensuráveis**:
+  1. `npm --prefix frontend run build` conclui **sem nenhum warning** de chunk `> 500 kB`.
+  2. O chunk de entrada inicial (`index-*.js`) + chunks síncronos iniciais somam **menos de `550 kB` minificados** (redução `>= 50%` frente aos `1.217,44 kB` atuais).
+  3. `recharts` + `d3-*` ficam isolados em chunk próprio carregado apenas quando `DashboardPage` renderiza `MovementsChart`.
+  4. Todos os testes unitários/componentes do frontend e os 2 fluxos E2E Playwright passam sem regressão de autenticação ou navegação.
+
+#### Proposta `M7C-2` — Eliminação do N+1 HTTP em `InventoryDetailPage` e otimização de `stockStatus` em `ProductsService`
+
+- **Problema**:
+  1. Ao abrir `InventoryDetailPage`, a página faz `1` request para `GET /inventories/:id` e até **`50` requests paralelos** para `GET /products/:id` via `InventoryProductCell.tsx`, embora `readItemsDetail` (`backend/src/inventories/inventories.sql.ts:350-369`) **já faça `JOIN products p ON p.id = ii.product_id`**.
+  2. Em `ProductsService.findAll` (`backend/src/products/products.service.ts:53-55, 161-184`), o filtro `stockStatus=out` executa uma 3ª query `$queryRaw` desnecessária (`SELECT id FROM products WHERE current_stock = 0`) em vez de filtrar diretamente `currentStock: new Prisma.Decimal(0)` no `WhereInput`, e `idsByStockStatus` para `low`/`ok` não restringe por `isActive`/`categoryId`/`supplierId`.
+- **Evidência**: inspeção de `backend/src/inventories/inventories.sql.ts:350-369`, `frontend/src/features/inventories/components/InventoryProductCell.tsx:16` e `backend/src/products/products.service.ts:161-184`.
+- **Benefício esperado**: queda de **51 para 1 requisição HTTP** (`-98%`) ao abrir um inventário de 50 itens (eliminando também o risco de atingir o `ThrottlerGuard` de `100 req/60s` em inventários grandes) e redução de 3 para 2 queries SQL em `GET /products?stockStatus=out`.
+- **Risco**: Muito baixo. `productSku` e `productName` são adicionados de forma aditiva/opcional em `InventoryItemDto` (mantendo fallback em `InventoryProductCell.tsx`), sem alterar migrations nem quebrar contratos existentes.
+- **Arquivos afetados**:
+  - `backend/src/inventories/inventories.sql.ts`
+  - `backend/src/inventories/dto/inventory-response.dto.ts`
+  - `backend/src/inventories/inventories.service.spec.ts`
+  - `backend/src/products/products.service.ts`
+  - `backend/src/products/products.service.spec.ts`
+  - `frontend/src/features/inventories/api/inventories.types.ts`
+  - `frontend/src/features/inventories/components/InventoryProductCell.tsx`
+  - `frontend/src/features/inventories/components/InventoryCountCell.tsx`
+  - `frontend/src/features/inventories/pages/InventoryDetailPage.tsx`
+  - `frontend/src/features/inventories/pages/InventoryDetailPage.spec.tsx`
+- **Critérios de aceite mensuráveis**:
+  1. `GET /api/v1/inventories/:id` inclui `productSku` e `productName` em cada item de `items`.
+  2. `InventoryProductCell` renderiza nome e SKU imediatamente sem disparar `GET /api/v1/products/:id` quando `productName`/`productSku` estão presentes no item.
+  3. `GET /api/v1/products?stockStatus=out` executa apenas `findMany` + `count` (2 queries em vez de 3), mantendo 100% dos testes unitários e de integração de produtos e inventários verdes.
+
+#### Proposta `M7C-3` — Conformidade WCAG 2.2 AA: Contraste OKLCH, Skip Link, Labels de Filtros, `FormField` ARIA e Modais
+
+- **Problema**:
+  1. Tokens `--sf-success` (`3,25:1` sobre `/10`), `--sf-warning` (`2,66:1` sobre `/10`) e `--sf-danger` (`4,14:1` sobre `/10`) reprovam no critério WCAG 2.2 AA (`1.4.3 Contrast Minimum >= 4,5:1`).
+  2. Falta o link `"Pular para o conteúdo"` apontando para `#conteudo` em `AppShell.tsx`.
+  3. 13 `<SelectTrigger>` e 1 `ProductPicker` em barras de filtro não possuem `aria-label`.
+  4. 5 `<SelectTrigger>` dentro de `<FormField>` (`ProductForm`, `MovementEntryForm`, `UserNewPage`) não repassam `aria-describedby` e `aria-invalid`.
+  5. `Sidebar.tsx` mobile `SheetContent` não possui `SheetDescription` e `sheet.tsx` usa `"Close"` em inglês.
+  6. `InventoryCountCell.tsx` não associa a mensagem de erro via `aria-describedby` nem submete com `Enter`.
+- **Evidência**: cálculo matemático de luminância OKLCH (§19.18.4.1) e inspeção linha a linha dos componentes (§19.18.4.2).
+- **Benefício esperado**: 100% dos tokens semânticos de cor com contraste `>= 4,5:1` tanto sobre fundo branco quanto sobre fundos tint `/10`; navegação por teclado e leitores de tela completos em todas as telas, filtros, formulários e modais.
+- **Risco**: Muito baixo. As alterações de cor preservam exatamente os matizes originais (`H = 163`, `75`, `27`), ajustando apenas a luminosidade `L`. Os atributos `aria-*` não alteram seletores de texto visível usados nos testes existentes.
+- **Arquivos afetados**:
+  - `frontend/src/index.css`
+  - `frontend/src/components/layout/AppShell.tsx`
+  - `frontend/src/components/layout/Sidebar.tsx`
+  - `frontend/src/components/ui/sheet.tsx`
+  - `frontend/src/features/dashboard/pages/DashboardPage.tsx`
+  - `frontend/src/features/products/pages/ProductsPage.tsx`
+  - `frontend/src/features/products/components/ProductForm.tsx`
+  - `frontend/src/features/categories/pages/CategoriesPage.tsx`
+  - `frontend/src/features/suppliers/pages/SuppliersPage.tsx`
+  - `frontend/src/features/movements/pages/MovementsPage.tsx`
+  - `frontend/src/features/movements/components/MovementEntryForm.tsx`
+  - `frontend/src/features/inventories/pages/InventoriesPage.tsx`
+  - `frontend/src/features/inventories/components/InventoryCountCell.tsx`
+  - `frontend/src/features/reports/pages/ReportsPage.tsx`
+  - `frontend/src/features/users/pages/UsersPage.tsx`
+  - `frontend/src/features/users/pages/UserDetailPage.tsx`
+  - `frontend/src/features/users/pages/UserNewPage.tsx`
+- **Critérios de aceite mensuráveis**:
+  1. Contraste calculado de `--sf-success`, `--sf-warning` e `--sf-danger` é **`>= 4,5:1`** tanto sobre `--sf-bg` quanto sobre `bg-(--color-*)/10` (verificado por teste unitário matemático dedicado).
+  2. Todo `<SelectTrigger>` e `ProductPicker` da aplicação possui nome acessível (`aria-label` ou `<label htmlFor>` associado) e todo `<SelectTrigger>` em `<FormField>` propaga `aria-describedby` e `aria-invalid`.
+  3. Pressionar `Tab` no início de qualquer página autenticada foca o link `"Pular para o conteúdo"` (`href="#conteudo"`).
+
+#### Proposta `M7C-4` — Responsividade em `375px`, `768px` e `1440px` e Cards Mobile em Listagens (`D7-5`)
+
+- **Problema**:
+  1. Apenas 2 de 8 listagens operacionais (`ProductsPage` e `SuppliersPage`) implementam `renderCard` no `DataTable` para `< 640px` (`375px`); `CategoriesPage`, `MovementsPage`, `InventoriesPage`, `UsersPage`, `AuditPage` e a tabela de recentes de `DashboardPage` forçam scroll horizontal em telas de `375px`.
+  2. Em `375px`, os seletores de filtro com largura fixa (`w-72` em `ReportsPage`, `w-52` em `InventoriesPage`, `w-48`/`w-44`/`w-36` nas demais), os pares de `<Input type="date">` lado a lado (`MovementsPage.tsx:190` e `ReportsPage.tsx:242`) e os grupos de botões sem `flex-wrap` (`InventoryDetailPage.tsx:195` e `UserDetailPage.tsx:198`) espremem ou estouram o viewport horizontal.
+- **Evidência**: auditoria de classes Tailwind e estrutura de layout nas páginas (§19.18.5).
+- **Benefício esperado**: zero overflow horizontal de página (`document.documentElement.scrollWidth <= window.innerWidth`) em `375px`, `768px` e `1440px`; visualização nativa em cards no mobile (`< 640px`) para todas as listagens operacionais, preservando todas as ações (`Editar`/`Inativar`, `Ver`, links de detalhe).
+- **Risco**: Baixo. `DataTable.tsx` já renderiza simultaneamente a lista de cards (`sm:hidden`) e a tabela (`hidden sm:block`) ou condicional conforme suporte existente; importante garantir nos cards mobile que os botões/links não dupliquem conflitos nos testes unitários que buscam por role/texto.
+  - **Cuidado técnico importante para testes unitários**: como `DataTable.tsx:242-255` renderiza `<div className="space-y-2 sm:hidden">{renderCard}</div>` **e** `<div className="hidden sm:block"><Table/></div>` ao mesmo tempo no DOM (porque CSS media queries não removem nós do DOM no `jsdom`), nas páginas `ProductsPage` e `SuppliersPage` os testes já convivem com isso porque o card usa um único `<Link>` e os testes usam `getAllByText` ou seletores de linha (`role="row"`). Nas páginas `CategoriesPage`, `UsersPage`, `AuditPage`, `MovementsPage`, `InventoriesPage` e `DashboardPage`, devemos verificar cuidadosamente se algum `.spec.tsx` usa `getByText` (que falharia se o mesmo texto aparecer no card `sm:hidden` e na `Table` `hidden sm:block`). Se um `.spec.tsx` usar `getByText` estrito, podemos ou usar `matchMedia` no `DataTable` para renderizar `renderCard` apenas quando `window.matchMedia('(max-width: 639px)').matches` for `true` (com fallback CSS), **ou** ajustar/validar os testes. Renderizar condicionalmente no `DataTable` via hook leve `useIsMobile()` (ou `matchMedia` sincronizado) além das classes CSS evita duplicar o número de nós no DOM em desktop e mantém 100% de compatibilidade com todos os `getByText` existentes!
+- **Arquivos afetados**:
+  - `frontend/src/components/shared/DataTable.tsx` (avaliar otimização de renderização mobile/desktop)
+  - `frontend/src/features/dashboard/pages/DashboardPage.tsx`
+  - `frontend/src/features/categories/pages/CategoriesPage.tsx`
+  - `frontend/src/features/products/pages/ProductsPage.tsx`
+  - `frontend/src/features/suppliers/pages/SuppliersPage.tsx`
+  - `frontend/src/features/movements/pages/MovementsPage.tsx`
+  - `frontend/src/features/inventories/pages/InventoriesPage.tsx`
+  - `frontend/src/features/inventories/pages/InventoryDetailPage.tsx`
+  - `frontend/src/features/reports/pages/ReportsPage.tsx`
+  - `frontend/src/features/users/pages/UsersPage.tsx`
+  - `frontend/src/features/users/pages/UserDetailPage.tsx`
+  - `frontend/src/features/audit/pages/AuditPage.tsx`
+- **Critérios de aceite mensuráveis**:
+  1. Em `375px`, `768px` e `1440px`, nenhuma página apresenta overflow horizontal involuntário no `body`/`documentElement`.
+  2. Todas as listagens de navegação possuem visualização responsiva limpa em `375px`, com ações acessíveis por toque/teclado.
+  3. 100% dos testes de páginas existentes (`*.spec.tsx`) e novos testes passam.
+
+#### Proposta `M7C-5` — Qualidade Visual e Fluidez (`prefers-reduced-motion` e `PageLoader`)
+
+- **Problema**: animações CSS (`animate-pulse`, `tw-animate-css`, transições de largura da `Sidebar`) não respeitam `@media (prefers-reduced-motion: reduce)` (`A6`), e o carregamento assíncrono de rotas lazy requer um estado visual consistente com o Design System.
+- **Evidência**: ausência de `prefers-reduced-motion` em `frontend/src/index.css`.
+- **Benefício esperado**: respeito integral à preferência de redução de movimento do sistema operacional (WCAG 2.3.3 / boas práticas de UX) e transição suave entre rotas lazy.
+- **Risco**: Nenhum.
+- **Arquivos afetados**:
+  - `frontend/src/index.css`
+  - `frontend/src/components/shared/PageLoader.tsx` (novo componente leve de fallback `<Suspense>`)
+- **Critérios de aceite mensuráveis**:
+  1. Regra `@media (prefers-reduced-motion: reduce)` presente em `frontend/src/index.css` desativando animações/transições contínuas.
+  2. Fallback `PageLoader` acessível (`role="status"`, `aria-label="Carregando página"`) integrado ao `router.tsx`.
+
+---
+
+### 19.18.8 Divisão do Marco 7C em Subetapas de Execução e Pontos de Parada
+
+Para manter controle rigoroso de escopo e verificação incremental, a execução do Marco 7C será dividida em **3 subetapas sequenciais**:
+
+#### Subetapa `7C.1` — Performance Frontend (`M7C-1`) e Performance Backend/N+1 (`M7C-2`)
+
+1. Implementar `PageLoader.tsx`, converter rotas de `frontend/src/router.tsx` para `React.lazy` + `<Suspense>`, isolar `MovementsChart` com `React.lazy` em `DashboardPage.tsx` e configurar `manualChunks` em `frontend/vite.config.ts`.
+2. Medir o novo `vite build` e comprovar a redução do chunk inicial e a ausência de chunks `> 500 kB`.
+3. Incluir `product_sku` e `product_name` no `JOIN` já existente de `readItemsDetail` (`backend/src/inventories/inventories.sql.ts`), atualizar `InventoryItemDto` e `InventoryProductCell.tsx` para eliminar as 50 requisições HTTP N+1 em `InventoryDetailPage`, e otimizar o filtro `stockStatus=out` em `ProductsService.findAll`.
+4. Executar testes unitários de backend, integração de backend e unitários de frontend.
+5. **Ponto de parada 1**: apresentar métricas comparativas antes/depois (bundle e queries/requests) e aguardar revisão (ou prosseguir se autorizado).
+
+#### Subetapa `7C.2` — Acessibilidade WCAG 2.2 AA (`M7C-3`), Responsividade (`M7C-4`) e Qualidade Visual (`M7C-5`)
+
+1. Ajustar os 3 tokens OKLCH (`--sf-success`, `--sf-warning`, `--sf-danger`) e adicionar `@media (prefers-reduced-motion: reduce)` em `frontend/src/index.css`.
+2. Adicionar o skip link `"Pular para o conteúdo"` em `AppShell.tsx`, `SheetDescription` em `Sidebar.tsx` e tradução `"Fechar"` em `sheet.tsx`.
+3. Adicionar `aria-label` nos 13 `<SelectTrigger>` e no `ProductPicker` das barras de filtro, propagar `aria-describedby` e `aria-invalid` nos 5 `<SelectTrigger>` dentro de `<FormField>`, e melhorar `InventoryCountCell.tsx` (`aria-describedby` no erro + tecla `Enter`).
+4. Implementar os ajustes de responsividade em `375px`/`768px`/`1440px` (`renderCard` mobile nas listagens operacionais e correção de larguras fixas/`flex-wrap` nas barras de filtro e cabeçalhos).
+5. Criar testes automatizados cobrindo o contraste matemático WCAG AA dos tokens de `index.css`, o skip link, os atributos ARIA dos filtros/formulários e o comportamento responsivo.
+6. **Ponto de parada 2**: apresentar os resultados reais da suíte de testes e aguardar revisão.
+
+#### Subetapa `7C.3` — Auditoria Final Ponta a Ponta (Playwright E2E, Verificação Multi-Viewport/Acessibilidade e Documentação)
+
+1. Revisar o diff completo do Marco 7C.
+2. Executar a bateria completa de verificação:
+   - `npm --prefix backend run lint`, `typecheck`, `test`, `test:int` e `build`;
+   - `npm --prefix frontend run lint`, `typecheck`, `test` e `build`;
+   - `npm --prefix frontend run test:e2e` (Playwright com Chromium real + banco `stockflow_e2e`);
+   - Verificação automatizada em Chromium real nos viewports `375x812`, `768x1024` e `1440x900` (checando `scrollWidth <= innerWidth` e regras de acessibilidade);
+   - `npm run format:check` e `npm audit --omit=dev`.
+3. Atualizar a documentação técnica (`docs/19-plano-fase-7.md` e documentos correlatos se aplicável) com todas as evidências finais.
+4. **Ponto de parada 3**: apresentar o relatório final da Subetapa `7C.3` e aguardar autorização explícita antes de qualquer commit ou push.
+
+---
+
+### 19.18.9 Decisões Abertas para Deliberação antes da Execução do Marco 7C
+
+#### Decisão `D7C-1` — Automação de verificações de acessibilidade (ferramentas e dependências)
+
+- **Opção A (Recomendada)**: Não adicionar novas dependências ao `package-lock.json` (mantendo a árvore npm intacta e sem novos alertas de `npm audit`). Implementar testes unitários/componentes no Vitest para validar matematicamente os contrastes WCAG 2.2 AA dos tokens OKLCH de `index.css` e as invariantes ARIA (`aria-label`, `aria-describedby`, `aria-invalid`, skip link, modais), além de executar auditoria em Chromium real (Playwright) durante a Subetapa `7C.3`.
+- **Opção B**: Instalar `@axe-core/playwright` em `frontend/package.json` (`devDependencies`) e adicionar asserções `AxeBuilder` diretamente nos testes E2E em `frontend/e2e/`.
+
+#### Decisão `D7C-2` (consolida `D7-5`, `D7-6` e `D7-7`) — Escopo técnico do Marco 7C
+
+- **Opção A (Recomendada)**: Aprovar o escopo completo `M7C-1` a `M7C-5`:
+  1. **`D7-6` / `D7-7` (`M7C-1`)**: Code-splitting por rota com `React.lazy` em `router.tsx`, lazy loading de `MovementsChart` em `DashboardPage.tsx` e particionamento `manualChunks` em `vite.config.ts` para manter todos os chunks `< 500 kB`.
+  2. **Performance Backend/N+1 (`M7C-2`)**: Nenhuma criação de índice/migration (cobertura atual comprovada via `EXPLAIN (ANALYZE, BUFFERS)`); eliminação do N+1 HTTP em `InventoryDetailPage` enriquecendo `readItemsDetail` com `productSku`/`productName` e otimização de `stockStatus=out` em `ProductsService`.
+  3. **Acessibilidade e Qualidade Visual (`M7C-3` e `M7C-5`)**: Ajuste de luminosidade OKLCH de `--sf-success`, `--sf-warning` e `--sf-danger` para `>= 4,5:1`, skip link `#conteudo`, `aria-label` nos 13 filtros `SelectTrigger`, `aria-describedby`/`aria-invalid` nos `SelectTrigger` de `FormField`, melhorias em `Sidebar`/`sheet`/`InventoryCountCell` e suporte a `@media (prefers-reduced-motion: reduce)`.
+  4. **`D7-5` (`M7C-4`)**: Uso de `renderCard` mobile (`< 640px`) nas listagens operacionais de consulta (`Products`, `Suppliers`, `Categories`, `Movements`, `Inventories`, `Users`, `Audit` e recentes do `Dashboard`) — usando detecção `matchMedia` em `DataTable` para não duplicar nós no DOM em desktop — e manutenção de tabela com `overflow-x-auto` nas telas de contagem inline (`InventoryDetailPage`) e relatórios analíticos (`ReportsPage`), além de ajustes de `flex-wrap`/larguras em `375px`.
+- **Opção B**: Executar apenas um subconjunto (especificar quais propostas de `M7C-1` a `M7C-5` devem ser incluídas ou ajustadas).
+
+---
+
+### 19.18.10 Decisões Aprovadas e Estado Atual do Marco 7C
+
+- **`D7C-1`: Opção B Aprovada (Automatização da acessibilidade com `@axe-core/playwright`)**:
+  - Aprovada a inclusão de `@axe-core/playwright` como `devDependency` **somente na Subetapa `7C.2` ou `7C.3`** (não instalar antecipadamente na `7C.1`), após verificar versão estável compatível, impacto no lockfile e ausência de vulnerabilidades conhecidas, mantendo também testes de teclado, foco, navegação e contraste.
+- **`D7C-2`: Opção A Aprovada (Escopo completo `M7C-1` a `M7C-5`)**:
+  - Aprovada a divisão em subetapas `7C.1`, `7C.2` e `7C.3` com parada e revisão entre cada uma.
+  - Em `M7C-2` (`ProductsService.findAll`), substituir a consulta auxiliar de IDs por filtro direto `currentStock = 0` no Prisma para `stockStatus=out` (preservando `low` e `ok` intactos e validando combinações com `isActive`, categoria, fornecedor, busca, paginação e ordenação).
+  - Documentada a limitação de que a medição das 14 consultas via `EXPLAIN (ANALYZE, BUFFERS)` foi realizada em base pequena de desenvolvimento/teste (`46` produtos, `72` movimentações), não demonstrando desempenho sob carga volumosa (nenhum índice ou migration será criado no Marco 7C; eventuais benchmarks com dados sintéticos ficam restritos a ambiente isolado sem operações destrutivas).
+- **Status de execução do Marco 7C**:
+  - **Planejamento técnico concluído e aprovado.**
+  - **Implementação das Subetapas `7C.1`, `7C.2` e `7C.3`: pendente (nenhuma alteração de código iniciada neste commit).**
