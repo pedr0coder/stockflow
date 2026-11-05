@@ -49,8 +49,27 @@ export const AuditAction = {
 
 export type AuditAction = (typeof AuditAction)[keyof typeof AuditAction];
 
-export interface RecordAuditInput {
-  action: AuditAction;
+/**
+ * Ações de estoque e inventário (Fase 5) que exigem atomicidade estrita junto
+ * da mutação de saldo/estado (`recordInTransaction`). Jamais podem ser
+ * passadas ao método best-effort `record()` (Marco 7B / S11).
+ */
+export const TRANSACTIONAL_AUDIT_ACTIONS = [
+  AuditAction.STOCK_MOVEMENT_CREATED,
+  AuditAction.INVENTORY_OPENED,
+  AuditAction.INVENTORY_COUNT_RECORDED,
+  AuditAction.INVENTORY_SUBMITTED,
+  AuditAction.INVENTORY_APPROVED,
+  AuditAction.INVENTORY_CANCELLED,
+] as const;
+
+export type TransactionalAuditAction = (typeof TRANSACTIONAL_AUDIT_ACTIONS)[number];
+export type BestEffortAuditAction = Exclude<AuditAction, TransactionalAuditAction>;
+
+const TRANSACTIONAL_ACTION_SET: ReadonlySet<string> = new Set(TRANSACTIONAL_AUDIT_ACTIONS);
+
+export interface RecordAuditInput<TAction extends AuditAction = AuditAction> {
+  action: TAction;
   entity?: string | undefined;
   entityId?: string | undefined;
   before?: unknown;
@@ -82,7 +101,13 @@ export class AuditService {
    * continua fora de transação e continua engolindo a falha
    * (docs/17-plano-fase-5.md §17.7.3, decisão D3).
    */
-  async record(input: RecordAuditInput): Promise<void> {
+  async record(input: RecordAuditInput<BestEffortAuditAction>): Promise<void> {
+    if (TRANSACTIONAL_ACTION_SET.has(input.action)) {
+      throw new Error(
+        `record: a ação ${String(input.action)} exige transação; use recordInTransaction(tx, ...).`,
+      );
+    }
+
     try {
       await this.prisma.auditLog.create({ data: this.buildAuditData(input) });
     } catch (error) {

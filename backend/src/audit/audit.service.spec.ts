@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { AuditAction, AuditService } from './audit.service';
+import {
+  AuditAction,
+  AuditService,
+  TRANSACTIONAL_AUDIT_ACTIONS,
+  type BestEffortAuditAction,
+} from './audit.service';
 
 function makeService(createImpl: () => Promise<unknown>) {
   const auditLogCreate = vi.fn(createImpl);
@@ -41,6 +46,23 @@ describe('AuditService', () => {
 
       expect(auditLogCreate).toHaveBeenCalledTimes(1);
     });
+
+    it.each(TRANSACTIONAL_AUDIT_ACTIONS)(
+      'recusa em runtime a ação transacional %s caso a checagem de tipo seja contornada (S11)',
+      async (action) => {
+        const { service, auditLogCreate, logger } = makeService(() => Promise.resolve({}));
+
+        await expect(
+          service.record({
+            action: action as unknown as BestEffortAuditAction,
+            actorId: 'u1',
+          }),
+        ).rejects.toThrow(/exige transação; use recordInTransaction/);
+
+        expect(auditLogCreate).not.toHaveBeenCalled();
+        expect(logger.error).not.toHaveBeenCalled();
+      },
+    );
   });
 
   describe('recordInTransaction (RG-5: propaga a falha, para a transação desfazer)', () => {
