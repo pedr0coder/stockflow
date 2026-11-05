@@ -1,32 +1,111 @@
+import { lazy, Suspense, type ComponentType, type ReactNode } from 'react';
 import { createBrowserRouter, Navigate, type RouteObject } from 'react-router';
 import { AppShell } from '@/app/layouts/AppShell';
 import { AuthLayout } from '@/app/layouts/AuthLayout';
+import { PageLoader } from '@/components/shared/PageLoader';
 import { PhasePlaceholder } from '@/components/shared/PhasePlaceholder';
-import { AuditPage } from '@/features/audit/pages/AuditPage';
-import { LoginPage } from '@/features/auth/pages/LoginPage';
 import { ProtectedRoute } from '@/features/auth/ProtectedRoute';
 import { RoleGuard } from '@/features/auth/RoleGuard';
-import { CategoriesPage } from '@/features/categories/pages/CategoriesPage';
-import { DashboardPage } from '@/features/dashboard/pages/DashboardPage';
-import { InventoryDetailPage } from '@/features/inventories/pages/InventoryDetailPage';
-import { InventoryNewPage } from '@/features/inventories/pages/InventoryNewPage';
-import { InventoriesPage } from '@/features/inventories/pages/InventoriesPage';
-import { ProductDetailPage } from '@/features/products/pages/ProductDetailPage';
-import { ProductEditPage } from '@/features/products/pages/ProductEditPage';
-import { ProductNewPage } from '@/features/products/pages/ProductNewPage';
-import { ProductsPage } from '@/features/products/pages/ProductsPage';
-import { ReportsPage } from '@/features/reports/pages/ReportsPage';
-import { MovementNewPage } from '@/features/stock-movements/pages/MovementNewPage';
-import { MovementsPage } from '@/features/stock-movements/pages/MovementsPage';
-import { SupplierDetailPage } from '@/features/suppliers/pages/SupplierDetailPage';
-import { SupplierNewPage } from '@/features/suppliers/pages/SupplierNewPage';
-import { SuppliersPage } from '@/features/suppliers/pages/SuppliersPage';
-import { UserDetailPage } from '@/features/users/pages/UserDetailPage';
-import { UserNewPage } from '@/features/users/pages/UserNewPage';
-import { UsersPage } from '@/features/users/pages/UsersPage';
-import { DesignSystemPage } from '@/pages/DesignSystemPage';
-import { NotFoundPage } from '@/pages/NotFoundPage';
 import type { UserRole } from '@/types/auth';
+
+/**
+ * Code-splitting por rota (Marco 7C, M7C-1).
+ *
+ * Só o que precisa existir antes de qualquer página fica no chunk de entrada:
+ * `AuthLayout`, `AppShell`, `ProtectedRoute` e `RoleGuard`. A verificação de
+ * sessão, o RBAC e o esqueleto (sidebar + cabeçalho) nunca esperam por rede
+ * nem piscam. Cada página vira um chunk próprio, baixado na primeira visita.
+ *
+ * As páginas são exportações nomeadas (não `default`), então o adaptador
+ * `{ default: module[name] }` é o que `React.lazy` exige. O `Suspense` fica em
+ * volta de cada página, e não acima do `AppShell`, para que o fallback ocupe
+ * apenas a área de conteúdo.
+ */
+function lazyPage<K extends string>(
+  load: () => Promise<Record<K, ComponentType>>,
+  name: K,
+): ReactNode {
+  const Page = lazy<ComponentType>(async () => {
+    const module = await load();
+    const component: ComponentType = module[name];
+
+    return { default: component };
+  });
+
+  return (
+    <Suspense fallback={<PageLoader />}>
+      <Page />
+    </Suspense>
+  );
+}
+
+const auditPage = lazyPage(() => import('@/features/audit/pages/AuditPage'), 'AuditPage');
+const loginPage = lazyPage(() => import('@/features/auth/pages/LoginPage'), 'LoginPage');
+const categoriesPage = lazyPage(
+  () => import('@/features/categories/pages/CategoriesPage'),
+  'CategoriesPage',
+);
+const dashboardPage = lazyPage(
+  () => import('@/features/dashboard/pages/DashboardPage'),
+  'DashboardPage',
+);
+const inventoryDetailPage = lazyPage(
+  () => import('@/features/inventories/pages/InventoryDetailPage'),
+  'InventoryDetailPage',
+);
+const inventoryNewPage = lazyPage(
+  () => import('@/features/inventories/pages/InventoryNewPage'),
+  'InventoryNewPage',
+);
+const inventoriesPage = lazyPage(
+  () => import('@/features/inventories/pages/InventoriesPage'),
+  'InventoriesPage',
+);
+const productDetailPage = lazyPage(
+  () => import('@/features/products/pages/ProductDetailPage'),
+  'ProductDetailPage',
+);
+const productEditPage = lazyPage(
+  () => import('@/features/products/pages/ProductEditPage'),
+  'ProductEditPage',
+);
+const productNewPage = lazyPage(
+  () => import('@/features/products/pages/ProductNewPage'),
+  'ProductNewPage',
+);
+const productsPage = lazyPage(
+  () => import('@/features/products/pages/ProductsPage'),
+  'ProductsPage',
+);
+const reportsPage = lazyPage(() => import('@/features/reports/pages/ReportsPage'), 'ReportsPage');
+const movementNewPage = lazyPage(
+  () => import('@/features/stock-movements/pages/MovementNewPage'),
+  'MovementNewPage',
+);
+const movementsPage = lazyPage(
+  () => import('@/features/stock-movements/pages/MovementsPage'),
+  'MovementsPage',
+);
+const supplierDetailPage = lazyPage(
+  () => import('@/features/suppliers/pages/SupplierDetailPage'),
+  'SupplierDetailPage',
+);
+const supplierNewPage = lazyPage(
+  () => import('@/features/suppliers/pages/SupplierNewPage'),
+  'SupplierNewPage',
+);
+const suppliersPage = lazyPage(
+  () => import('@/features/suppliers/pages/SuppliersPage'),
+  'SuppliersPage',
+);
+const userDetailPage = lazyPage(
+  () => import('@/features/users/pages/UserDetailPage'),
+  'UserDetailPage',
+);
+const userNewPage = lazyPage(() => import('@/features/users/pages/UserNewPage'), 'UserNewPage');
+const usersPage = lazyPage(() => import('@/features/users/pages/UsersPage'), 'UsersPage');
+const designSystemPage = lazyPage(() => import('@/pages/DesignSystemPage'), 'DesignSystemPage');
+const notFoundPage = lazyPage(() => import('@/pages/NotFoundPage'), 'NotFoundPage');
 
 /**
  * Rotas da aplicação, seguindo o mapa de telas (docs/06-mvp-e-telas.md §6.2).
@@ -107,7 +186,7 @@ const placeholderRoutes: RouteObject[] = [...openPlaceholderRoutes, ...guardedPl
 export const router = createBrowserRouter([
   {
     element: <AuthLayout />,
-    children: [{ path: '/login', element: <LoginPage /> }],
+    children: [{ path: '/login', element: loginPage }],
   },
   {
     element: <ProtectedRoute />,
@@ -117,32 +196,32 @@ export const router = createBrowserRouter([
         element: <AppShell />,
         children: [
           { index: true, element: <Navigate to="/dashboard" replace /> },
-          { path: 'dashboard', element: <DashboardPage /> },
-          { path: 'categories', element: <CategoriesPage /> },
-          { path: 'products', element: <ProductsPage /> },
-          { path: 'products/new', element: <ProductNewPage /> },
-          { path: 'products/:id', element: <ProductDetailPage /> },
-          { path: 'products/:id/edit', element: <ProductEditPage /> },
-          { path: 'suppliers', element: <SuppliersPage /> },
-          { path: 'suppliers/new', element: <SupplierNewPage /> },
-          { path: 'suppliers/:id', element: <SupplierDetailPage /> },
-          { path: 'movements', element: <MovementsPage /> },
-          { path: 'movements/new', element: <MovementNewPage /> },
-          { path: 'inventories', element: <InventoriesPage /> },
-          { path: 'inventories/new', element: <InventoryNewPage /> },
-          { path: 'inventories/:id', element: <InventoryDetailPage /> },
-          { path: 'reports', element: <ReportsPage /> },
+          { path: 'dashboard', element: dashboardPage },
+          { path: 'categories', element: categoriesPage },
+          { path: 'products', element: productsPage },
+          { path: 'products/new', element: productNewPage },
+          { path: 'products/:id', element: productDetailPage },
+          { path: 'products/:id/edit', element: productEditPage },
+          { path: 'suppliers', element: suppliersPage },
+          { path: 'suppliers/new', element: supplierNewPage },
+          { path: 'suppliers/:id', element: supplierDetailPage },
+          { path: 'movements', element: movementsPage },
+          { path: 'movements/new', element: movementNewPage },
+          { path: 'inventories', element: inventoriesPage },
+          { path: 'inventories/new', element: inventoryNewPage },
+          { path: 'inventories/:id', element: inventoryDetailPage },
+          { path: 'reports', element: reportsPage },
           {
             element: <RoleGuard roles={['ADMIN', 'MANAGER']} />,
             children: [
-              { path: 'users', element: <UsersPage /> },
-              { path: 'users/new', element: <UserNewPage /> },
-              { path: 'users/:id', element: <UserDetailPage /> },
+              { path: 'users', element: usersPage },
+              { path: 'users/new', element: userNewPage },
+              { path: 'users/:id', element: userDetailPage },
             ],
           },
           {
             element: <RoleGuard roles={['ADMIN']} />,
-            children: [{ path: 'audit', element: <AuditPage /> }],
+            children: [{ path: 'audit', element: auditPage }],
           },
           /**
            * Vitrine do design system.
@@ -153,11 +232,11 @@ export const router = createBrowserRouter([
            * visíveis em um lugar só, e some quando o projeto tiver telas de
            * verdade exercitando os mesmos componentes.
            */
-          { path: 'design-system', element: <DesignSystemPage /> },
+          { path: 'design-system', element: designSystemPage },
           ...placeholderRoutes,
         ],
       },
     ],
   },
-  { path: '*', element: <NotFoundPage /> },
+  { path: '*', element: notFoundPage },
 ]);

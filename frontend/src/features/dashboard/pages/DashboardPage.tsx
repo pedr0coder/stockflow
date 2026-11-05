@@ -1,5 +1,5 @@
 import { AlertTriangle, Boxes, PackageX, Package } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { lazy, Suspense, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
@@ -15,7 +15,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { MovementsChart } from '@/features/dashboard/components/MovementsChart';
 import {
   useDashboardSummaryQuery,
   useMovementsChartQuery,
@@ -23,6 +22,17 @@ import {
 } from '@/features/dashboard/queries';
 import { ApiError } from '@/lib/api-client';
 import { formatDateTime, formatQuantity } from '@/lib/format';
+
+/**
+ * O gráfico (`recharts` + `d3-*`) é a maior dependência do bundle e só existe
+ * nesta tela (Marco 7C, M7C-1). Carregá-lo sob demanda deixa os indicadores e
+ * a lista de movimentações recentes renderizarem sem esperar a engine gráfica.
+ */
+const MovementsChart = lazy(async () => {
+  const module = await import('@/features/dashboard/components/MovementsChart');
+
+  return { default: module.MovementsChart };
+});
 
 const RECENT_LIMIT = 10;
 const PERIOD_OPTIONS = [
@@ -166,7 +176,9 @@ export function DashboardPage(): ReactNode {
                 description="O gráfico aparece quando houver entradas e saídas registradas no período selecionado."
               />
             ) : (
-              <MovementsChart points={chartQuery.data} />
+              <Suspense fallback={<Skeleton className="h-[280px] w-full" />}>
+                <MovementsChart points={chartQuery.data} />
+              </Suspense>
             )}
           </CardContent>
         </Card>

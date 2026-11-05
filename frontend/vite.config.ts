@@ -22,6 +22,81 @@ export default defineConfig({
     },
   },
 
+  /**
+   * Chunks de vendor determinísticos (Marco 7C, M7C-1 / D7-7).
+   *
+   * O Vite 8 empacota com Rolldown, onde `manualChunks` está obsoleto; o
+   * equivalente é `codeSplitting.groups`. Sem isto, o Rolldown ainda divide por
+   * rota, mas dá nomes instáveis aos chunks compartilhados (`button-<hash>`,
+   * `dist-<hash>`...) e mistura bibliotecas que mudam em ritmos diferentes.
+   * Com grupos por biblioteca, o hash de `vendor-react` só muda quando o React
+   * muda, e o cache HTTP de longo prazo sobrevive a um deploy de código da
+   * aplicação.
+   *
+   * `vendor-charts` agrupa só o que o `recharts` traz. Nenhum módulo carregado
+   * na entrada pode cair nesse grupo — senão o gráfico voltaria ao caminho
+   * crítico. `@tanstack/react-table` também fica separado de `react-query`:
+   * a tabela só é usada por páginas carregadas sob demanda, e juntá-las
+   * custaria ~35 kB à carga inicial. Os primitivos de UI (radix) ficam sem
+   * grupo de propósito: agrupá-los puxava para a entrada módulos usados só
+   * por páginas lazy (medido: 579 kB iniciais contra 542 kB sem o grupo).
+   *
+   * Nada aqui usa `chunkSizeWarningLimit`: o aviso de 500 kB continua ligado
+   * e o build deve passar sem ele.
+   */
+  build: {
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          // Sem isto, o grupo de maior prioridade (`vendor-charts`) arrasta
+          // para dentro de si as dependências dos seus módulos — inclusive o
+          // React, que `react-redux` importa — e o chunk do gráfico passa a
+          // fazer parte da carga inicial.
+          includeDependenciesRecursively: false,
+          groups: [
+            {
+              // `use-sync-external-store` é dependência do `recharts` (via
+              // `react-redux`) E do `@tanstack/react-table` (via `react-store`).
+              // Num grupo próprio, os dois apontam para ele e nenhum puxa o
+              // chunk do gráfico — dentro de `vendor-charts`, as listagens
+              // baixariam 365 kB de gráfico; fora de qualquer grupo, ele caía no
+              // chunk de `MovementsChart` e criava um ciclo entre chunks
+              // (`MovementsChart` ⇄ `vendor-charts`), detectado na auditoria.
+              name: 'vendor-sync',
+              test: /node_modules[\\/]use-sync-external-store[\\/]/,
+              priority: 50,
+            },
+            {
+              name: 'vendor-charts',
+              test: /node_modules[\\/](recharts|d3-[^\\/]+|victory-vendor|internmap|@reduxjs|react-redux|redux|redux-thunk|immer|reselect|es-toolkit|decimal\.js-light|eventemitter3|tiny-invariant|react-is)[\\/]/,
+              priority: 40,
+            },
+            {
+              name: 'vendor-react',
+              test: /node_modules[\\/](react|react-dom|scheduler|react-router)[\\/]/,
+              priority: 30,
+            },
+            {
+              name: 'vendor-forms',
+              test: /node_modules[\\/](react-hook-form|@hookform|zod)[\\/]/,
+              priority: 20,
+            },
+            {
+              name: 'vendor-query',
+              test: /node_modules[\\/]@tanstack[\\/](react-query|query-core)[\\/]/,
+              priority: 20,
+            },
+            {
+              name: 'vendor-table',
+              test: /node_modules[\\/]@tanstack[\\/](react-table|table-core|react-store|store)[\\/]/,
+              priority: 20,
+            },
+          ],
+        },
+      },
+    },
+  },
+
   server: {
     port: 5173,
     // '0.0.0.0' para que a porta seja alcançável de fora do container.
