@@ -39,10 +39,12 @@
   /* Semântica de estoque, usada de forma igual em tabela, badge e dashboard:
      success = entrada, warning = estoque baixo ou ajuste, danger = saída ou
      sem estoque. Cor nunca é o único portador da informação: todo badge
-     também carrega rótulo em texto (§6.6). */
-  --sf-success: oklch(59.6% 0.145 163);
-  --sf-warning: oklch(68.1% 0.162 75);
-  --sf-danger: oklch(57.7% 0.215 27);
+     também carrega rótulo em texto (§6.6).
+     Luminosidades calibradas no Marco 7C (M7C-3) para garantir contraste
+     WCAG 2.2 AA (>= 4,5:1) tanto sobre `--sf-bg` quanto sobre fundos `/10`. */
+  --sf-success: oklch(50% 0.145 163);
+  --sf-warning: oklch(52% 0.145 75);
+  --sf-danger: oklch(53% 0.215 27);
 
   /* Raio usado por componente que precisa do valor em `style` inline. */
   --radius: 0.5rem;
@@ -149,5 +151,20 @@
      sem precisar de fonte monoespaçada no texto inteiro. */
   table {
     font-variant-numeric: tabular-nums;
+  }
+
+  /* Respeita a preferência do sistema operacional por movimento reduzido
+     (WCAG 2.2 §2.3.3 / M7C-5): desativa animações e transições decorativas
+     e força rolagem instantânea, preservando os estados funcionais de
+     carregamento (Skeleton estático e rótulos "Carregando…"/"Salvando…"). */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }

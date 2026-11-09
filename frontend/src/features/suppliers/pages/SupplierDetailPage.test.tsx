@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -79,7 +79,14 @@ describe('SupplierDetailPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Distribuidora Norte' })).toBeInTheDocument();
     expect(screen.getByText('contato@norte.invalid')).toBeInTheDocument();
-    expect(await screen.findByText('Chave de fenda')).toBeInTheDocument();
+
+    const table = within(
+      await screen.findByRole('table', { name: 'Produtos vinculados a Distribuidora Norte' }),
+    );
+    expect(table.getByText('Chave de fenda')).toBeInTheDocument();
+
+    const [, cardList] = screen.getAllByRole('list');
+    expect(within(cardList!).getByText('Chave de fenda')).toBeInTheDocument();
   });
 
   it('sem produto vinculado, mostra o estado vazio específico', async () => {

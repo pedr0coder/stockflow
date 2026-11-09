@@ -239,7 +239,7 @@ export function ReportsPage(): ReactNode {
       case 'movements':
         return (
           <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-1">
+            <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-1">
               <Input
                 type="date"
                 value={dateFrom}
@@ -247,6 +247,7 @@ export function ReportsPage(): ReactNode {
                   setDateFrom(event.target.value);
                 }}
                 aria-label="Data inicial"
+                className="w-full sm:w-44"
               />
               <span className="text-xs text-muted-foreground">até</span>
               <Input
@@ -256,6 +257,7 @@ export function ReportsPage(): ReactNode {
                   setDateTo(event.target.value);
                 }}
                 aria-label="Data final"
+                className="w-full sm:w-44"
               />
             </div>
             {renderReport(
@@ -305,7 +307,7 @@ export function ReportsPage(): ReactNode {
           setSelected(value as ReportKey);
         }}
       >
-        <SelectTrigger className="w-72">
+        <SelectTrigger className="w-full sm:w-72" aria-label="Selecionar relatório">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

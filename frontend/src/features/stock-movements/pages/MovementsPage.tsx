@@ -139,6 +139,7 @@ export function MovementsPage(): ReactNode {
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <ProductPicker
+          aria-label="Filtrar por produto"
           value={product}
           onChange={(value) => {
             setProduct(value);
@@ -154,7 +155,7 @@ export function MovementsPage(): ReactNode {
             setPageIndex(0);
           }}
         >
-          <SelectTrigger size="sm" className="w-full">
+          <SelectTrigger size="sm" className="w-full" aria-label="Filtrar por tipo de movimentação">
             <SelectValue placeholder="Tipo" />
           </SelectTrigger>
           <SelectContent>
@@ -172,7 +173,11 @@ export function MovementsPage(): ReactNode {
             setPageIndex(0);
           }}
         >
-          <SelectTrigger size="sm" className="w-full">
+          <SelectTrigger
+            size="sm"
+            className="w-full"
+            aria-label="Filtrar por motivo da movimentação"
+          >
             <SelectValue placeholder="Motivo" />
           </SelectTrigger>
           <SelectContent>
@@ -187,7 +192,7 @@ export function MovementsPage(): ReactNode {
           </SelectContent>
         </Select>
 
-        <div className="flex items-center gap-1">
+        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-1">
           <Input
             type="date"
             value={dateFrom}
@@ -222,6 +227,31 @@ export function MovementsPage(): ReactNode {
           description: 'Entradas, saídas e ajustes aparecem aqui assim que forem lançados.',
           icon: Boxes,
         }}
+        renderCard={(row) => (
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <MovementTypeBadge type={row.type} />
+              <span className="font-mono text-sm font-medium">{formatQuantity(row.quantity)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-2 text-sm">
+              <span>{REASON_LABEL[row.reason as MovementReasonValue] ?? row.reason}</span>
+              <span className="font-mono text-xs text-muted-foreground">
+                Saldo: {formatQuantity(row.stockAfter)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+              <span>
+                {formatDateTime(row.createdAt)} · {row.user.name}
+              </span>
+              <Link
+                to={`/products/${row.productId}`}
+                className="font-medium text-foreground hover:underline"
+              >
+                Ver produto
+              </Link>
+            </div>
+          </div>
+        )}
         {...(hasFilters ? { onClearFilters: clearFilters } : {})}
         state={
           isPending

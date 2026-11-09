@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/render';
@@ -30,6 +30,10 @@ const INVENTARIO = {
   approvedAt: null,
 };
 
+async function findTable() {
+  return within(await screen.findByRole('table', { name: 'Lista de inventários' }));
+}
+
 describe('InventoriesPage', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn());
@@ -39,13 +43,18 @@ describe('InventoriesPage', () => {
     vi.unstubAllGlobals();
   });
 
-  it('mostra os inventários reais com situação traduzida', async () => {
+  it('mostra os inventários reais com situação traduzida na tabela e nos cards mobile', async () => {
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, page([INVENTARIO])));
 
     renderWithProviders(<InventoriesPage />);
 
-    expect(await screen.findByText('INV-2026-0001')).toBeInTheDocument();
-    expect(screen.getByText('Aberto')).toBeInTheDocument();
+    const table = await findTable();
+    expect(table.getByText('INV-2026-0001')).toBeInTheDocument();
+    expect(table.getByText('Aberto')).toBeInTheDocument();
+
+    const cards = within(screen.getByRole('list'));
+    expect(cards.getByText('INV-2026-0001')).toBeInTheDocument();
+    expect(cards.getByText('Aberto')).toBeInTheDocument();
   });
 
   it('estado vazio quando não há inventário', async () => {
@@ -63,7 +72,7 @@ describe('InventoriesPage', () => {
       .mockResolvedValueOnce(jsonResponse(200, page([])));
 
     renderWithProviders(<InventoriesPage />);
-    await screen.findByText('INV-2026-0001');
+    await findTable();
 
     await user.click(screen.getByRole('combobox'));
     await user.click(await screen.findByRole('option', { name: 'Aprovado' }));
@@ -83,7 +92,7 @@ describe('InventoriesPage', () => {
     renderWithProviders(<InventoriesPage />, {
       user: { id: 'u2', name: 'Op', email: 'op@x.com', role: 'OPERATOR' },
     });
-    await screen.findByText('INV-2026-0001');
+    await findTable();
 
     expect(screen.queryByRole('link', { name: /novo inventário/i })).not.toBeInTheDocument();
   });

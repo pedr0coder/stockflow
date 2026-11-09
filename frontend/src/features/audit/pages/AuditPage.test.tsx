@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/render';
@@ -32,6 +32,10 @@ const REGISTRO = {
   createdAt: '2026-01-10T14:30:00.000Z',
 };
 
+async function findTable() {
+  return within(await screen.findByRole('table', { name: 'Registro de auditoria' }));
+}
+
 describe('AuditPage', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn());
@@ -41,13 +45,18 @@ describe('AuditPage', () => {
     vi.unstubAllGlobals();
   });
 
-  it('mostra os eventos reais de auditoria', async () => {
+  it('mostra os eventos reais de auditoria na tabela e nos cards mobile', async () => {
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, page([REGISTRO])));
 
     renderWithProviders(<AuditPage />);
 
-    expect(await screen.findByText('PRODUCT_CREATED')).toBeInTheDocument();
-    expect(screen.getByText('admin@stockflow.local')).toBeInTheDocument();
+    const table = await findTable();
+    expect(table.getByText('PRODUCT_CREATED')).toBeInTheDocument();
+    expect(table.getByText('admin@stockflow.local')).toBeInTheDocument();
+
+    const cards = within(screen.getByRole('list'));
+    expect(cards.getByText('PRODUCT_CREATED')).toBeInTheDocument();
+    expect(cards.getByRole('button', { name: 'Ver' })).toBeInTheDocument();
   });
 
   it('abrir os detalhes mostra o estado anterior e posterior em JSON, somente leitura', async () => {
@@ -55,9 +64,9 @@ describe('AuditPage', () => {
     const user = userEvent.setup();
 
     renderWithProviders(<AuditPage />);
-    await screen.findByText('PRODUCT_CREATED');
+    const table = await findTable();
 
-    await user.click(screen.getByRole('button', { name: 'Ver' }));
+    await user.click(table.getByRole('button', { name: 'Ver' }));
 
     expect(await screen.findByText('Nenhum (criação)')).toBeInTheDocument();
     expect(screen.getByText(/"sku": "FER-0001"/)).toBeInTheDocument();
@@ -72,7 +81,7 @@ describe('AuditPage', () => {
       .mockResolvedValueOnce(jsonResponse(200, page([])));
 
     renderWithProviders(<AuditPage />);
-    await screen.findByText('PRODUCT_CREATED');
+    await findTable();
 
     await user.type(screen.getByLabelText(/filtrar por ação/i), 'PRODUCT_CREATED');
 

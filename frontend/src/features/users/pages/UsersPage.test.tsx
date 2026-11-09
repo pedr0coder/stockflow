@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/render';
@@ -29,6 +29,10 @@ const USUARIO = {
   updatedAt: '2026-01-01T00:00:00.000Z',
 };
 
+async function findTable() {
+  return within(await screen.findByRole('table', { name: 'Lista de usuários' }));
+}
+
 describe('UsersPage', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn());
@@ -38,15 +42,20 @@ describe('UsersPage', () => {
     vi.unstubAllGlobals();
   });
 
-  it('mostra os usuários reais, com papel traduzido', async () => {
+  it('mostra os usuários reais, com papel traduzido na tabela e nos cards mobile', async () => {
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, page([USUARIO])));
 
     renderWithProviders(<UsersPage />, {
       user: { id: 'u1', name: 'Admin', email: 'admin@x.com', role: 'ADMIN' },
     });
 
-    expect(await screen.findByText('Carla Operadora')).toBeInTheDocument();
-    expect(screen.getByText('Operador')).toBeInTheDocument();
+    const table = await findTable();
+    expect(table.getByText('Carla Operadora')).toBeInTheDocument();
+    expect(table.getByText('Operador')).toBeInTheDocument();
+
+    const cards = within(screen.getByRole('list'));
+    expect(cards.getByText('Carla Operadora')).toBeInTheDocument();
+    expect(cards.getByText('Operador')).toBeInTheDocument();
   });
 
   it('ADMIN vê o botão de novo usuário; MANAGER não', async () => {
@@ -57,14 +66,14 @@ describe('UsersPage', () => {
     const { unmount } = renderWithProviders(<UsersPage />, {
       user: { id: 'u1', name: 'Admin', email: 'admin@x.com', role: 'ADMIN' },
     });
-    await screen.findByText('Carla Operadora');
+    await findTable();
     expect(screen.getByRole('link', { name: /novo usuário/i })).toBeInTheDocument();
     unmount();
 
     renderWithProviders(<UsersPage />, {
       user: { id: 'u2', name: 'Manager', email: 'manager@x.com', role: 'MANAGER' },
     });
-    await screen.findByText('Carla Operadora');
+    await findTable();
     expect(screen.queryByRole('link', { name: /novo usuário/i })).not.toBeInTheDocument();
   });
 
@@ -77,7 +86,7 @@ describe('UsersPage', () => {
     renderWithProviders(<UsersPage />, {
       user: { id: 'u1', name: 'Admin', email: 'admin@x.com', role: 'ADMIN' },
     });
-    await screen.findByText('Carla Operadora');
+    await findTable();
 
     const combos = screen.getAllByRole('combobox');
     await user.click(combos[0]!);

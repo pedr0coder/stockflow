@@ -198,7 +198,7 @@ export function InventoryDetailPage(): ReactNode {
         title={inventory.code}
         breadcrumbs={[{ label: 'Inventários', to: '/inventories' }, { label: inventory.code }]}
         action={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline">{STATUS_LABEL[inventory.status]}</Badge>
 
             {canSubmit ? (

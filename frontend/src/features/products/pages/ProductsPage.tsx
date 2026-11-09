@@ -217,7 +217,7 @@ export function ProductsPage(): ReactNode {
             setPageIndex(0);
           }}
         >
-          <SelectTrigger size="sm" className="w-44">
+          <SelectTrigger size="sm" className="w-full sm:w-44" aria-label="Filtrar por categoria">
             <SelectValue placeholder="Categoria" />
           </SelectTrigger>
           <SelectContent>
@@ -237,7 +237,11 @@ export function ProductsPage(): ReactNode {
             setPageIndex(0);
           }}
         >
-          <SelectTrigger size="sm" className="w-40">
+          <SelectTrigger
+            size="sm"
+            className="w-full sm:w-40"
+            aria-label="Filtrar por situação de estoque"
+          >
             <SelectValue placeholder="Situação de estoque" />
           </SelectTrigger>
           <SelectContent>
@@ -255,7 +259,11 @@ export function ProductsPage(): ReactNode {
             setPageIndex(0);
           }}
         >
-          <SelectTrigger size="sm" className="w-36">
+          <SelectTrigger
+            size="sm"
+            className="w-full sm:w-36"
+            aria-label="Filtrar por situação do produto"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -277,14 +285,68 @@ export function ProductsPage(): ReactNode {
           icon: Package,
         }}
         renderCard={(row) => (
-          <Link to={`/products/${row.id}`} className="flex flex-col gap-1.5">
-            <div className="flex items-start justify-between gap-2">
-              <span className="font-medium">{row.name}</span>
-              <StockBadge status={classifyStock(row.currentStock, row.minStock)} />
-            </div>
-            <span className="font-mono text-xs text-muted-foreground">{row.sku}</span>
-            <span className="font-mono text-sm">{formatQuantity(row.currentStock)}</span>
-          </Link>
+          <div className="flex flex-col gap-2">
+            <Link to={`/products/${row.id}`} className="flex flex-col gap-1.5">
+              <div className="flex items-start justify-between gap-2">
+                <span className="font-medium hover:underline">{row.name}</span>
+                <StockBadge status={classifyStock(row.currentStock, row.minStock)} />
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono text-xs text-muted-foreground">{row.sku}</span>
+                {row.isActive ? (
+                  <Badge variant="outline" className="font-normal">
+                    Ativo
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="border-transparent bg-muted font-normal">
+                    Inativo
+                  </Badge>
+                )}
+              </div>
+              <span className="font-mono text-sm">{formatQuantity(row.currentStock)}</span>
+            </Link>
+
+            {canManage ? (
+              <div className="flex items-center justify-end gap-2 border-t pt-2">
+                <Button variant="ghost" size="sm" asChild>
+                  <Link to={`/products/${row.id}/edit`}>Editar</Link>
+                </Button>
+
+                <ConfirmDialog
+                  trigger={
+                    <Button variant="ghost" size="sm">
+                      {row.isActive ? 'Inativar' : 'Ativar'}
+                    </Button>
+                  }
+                  title={
+                    row.isActive
+                      ? `Inativar o produto ${row.name}?`
+                      : `Ativar o produto ${row.name}?`
+                  }
+                  description={
+                    row.isActive
+                      ? 'O produto deixa de aparecer nas opções de movimentação de estoque.'
+                      : 'O produto volta a aparecer nas opções de movimentação de estoque.'
+                  }
+                  destructive={row.isActive}
+                  onConfirm={async () => {
+                    try {
+                      await setStatusMutation.mutateAsync({
+                        id: row.id,
+                        isActive: !row.isActive,
+                      });
+                    } catch (err) {
+                      toast.error(
+                        err instanceof ApiError
+                          ? messageForCode(err.code, err.message)
+                          : 'Não foi possível alterar a situação do produto.',
+                      );
+                    }
+                  }}
+                />
+              </div>
+            ) : null}
+          </div>
         )}
         {...(hasFilters ? { onClearFilters: clearFilters } : {})}
         state={

@@ -1,7 +1,13 @@
 import { Boxes } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { SidebarNav } from './SidebarNav';
 import type { UserRole } from '@/types/auth';
 import { cn } from '@/lib/utils';
@@ -34,7 +40,7 @@ export function Sidebar({
       <aside
         className={cn(
           'hidden shrink-0 flex-col gap-4 border-r bg-background p-3 sm:flex',
-          'transition-[width] duration-150',
+          'transition-[width] duration-150 motion-reduce:transition-none',
           // Entre 640 e 1024 a largura é sempre a de ícone. Acima disso, segue
           // a escolha de quem está usando.
           collapsed ? 'w-16' : 'w-16 lg:w-60',
@@ -51,6 +57,7 @@ export function Sidebar({
               <Boxes aria-hidden="true" className="size-5 text-primary" />
               StockFlow
             </SheetTitle>
+            <SheetDescription className="sr-only">Menu de navegação principal</SheetDescription>
           </SheetHeader>
 
           <SidebarNav

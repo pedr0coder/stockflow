@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/render';
@@ -55,6 +55,10 @@ function mockApi(movementsResponse: unknown): void {
   });
 }
 
+async function findTable() {
+  return within(await screen.findByRole('table', { name: 'Histórico de movimentações' }));
+}
+
 describe('MovementsPage', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn());
@@ -64,14 +68,20 @@ describe('MovementsPage', () => {
     vi.unstubAllGlobals();
   });
 
-  it('mostra o histórico real, com tipo e motivo traduzidos', async () => {
+  it('mostra o histórico real, com tipo e motivo traduzidos na tabela e nos cards mobile', async () => {
     mockApi(page([MOVIMENTO]));
 
     renderWithProviders(<MovementsPage />);
 
-    expect(await screen.findByText('Entrada')).toBeInTheDocument();
-    expect(screen.getByText('Compra')).toBeInTheDocument();
-    expect(screen.getByText('10,000')).toBeInTheDocument();
+    const table = await findTable();
+    expect(table.getByText('Entrada')).toBeInTheDocument();
+    expect(table.getByText('Compra')).toBeInTheDocument();
+    expect(table.getByText('10,000')).toBeInTheDocument();
+
+    const cards = within(screen.getByRole('list'));
+    expect(cards.getByText('Entrada')).toBeInTheDocument();
+    expect(cards.getByText('Compra')).toBeInTheDocument();
+    expect(cards.getByRole('link', { name: 'Ver produto' })).toBeInTheDocument();
   });
 
   it('estado vazio quando não há movimentação', async () => {
@@ -87,7 +97,7 @@ describe('MovementsPage', () => {
     mockApi(page([MOVIMENTO]));
 
     renderWithProviders(<MovementsPage />);
-    await screen.findByText('Entrada');
+    await findTable();
 
     const typeSelects = screen.getAllByRole('combobox');
     await user.click(typeSelects[1]!); // produto é o primeiro combobox; tipo é o segundo
@@ -109,7 +119,7 @@ describe('MovementsPage', () => {
     renderWithProviders(<MovementsPage />, {
       user: { id: 'u2', name: 'Op', email: 'op@x.com', role: 'OPERATOR' },
     });
-    await screen.findByText('Entrada');
+    await findTable();
 
     const user = userEvent.setup();
     const combos = screen.getAllByRole('combobox');

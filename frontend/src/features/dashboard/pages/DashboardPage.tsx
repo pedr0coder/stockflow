@@ -139,8 +139,8 @@ export function DashboardPage(): ReactNode {
       </section>
 
       <div className="grid gap-4 lg:grid-cols-5">
-        <Card className="border shadow-none lg:col-span-3">
-          <CardHeader className="flex flex-row items-center justify-between gap-2">
+        <Card className="min-w-0 border shadow-none lg:col-span-3">
+          <CardHeader className="flex flex-col items-start justify-between gap-2 sm:flex-row sm:items-center">
             <CardTitle className="text-base">Movimentações por período</CardTitle>
             <Select
               value={String(days)}
@@ -148,7 +148,7 @@ export function DashboardPage(): ReactNode {
                 setDays(Number(value));
               }}
             >
-              <SelectTrigger size="sm" className="w-40">
+              <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Período do gráfico">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -183,7 +183,7 @@ export function DashboardPage(): ReactNode {
           </CardContent>
         </Card>
 
-        <Card className="border shadow-none lg:col-span-2">
+        <Card className="min-w-0 border shadow-none lg:col-span-2">
           <CardHeader>
             <CardTitle className="text-base">Movimentações recentes</CardTitle>
           </CardHeader>
@@ -217,7 +217,7 @@ export function DashboardPage(): ReactNode {
                       >
                         {movement.productName}
                       </Link>
-                      <span className="text-xs text-muted-foreground">
+                      <span className="truncate text-xs text-muted-foreground">
                         {formatDateTime(movement.createdAt)} · {movement.userName}
                       </span>
                     </div>

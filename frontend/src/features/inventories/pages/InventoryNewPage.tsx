@@ -138,11 +138,11 @@ export function InventoryNewPage(): ReactNode {
                         key={product.id}
                         className="flex items-center justify-between gap-2 px-3 py-2"
                       >
-                        <span className="flex items-center gap-2 text-sm">
-                          <span className="font-mono text-xs text-muted-foreground">
+                        <span className="flex min-w-0 items-center gap-2 text-sm">
+                          <span className="shrink-0 font-mono text-xs text-muted-foreground">
                             {product.sku}
                           </span>
-                          {product.name}
+                          <span className="truncate">{product.name}</span>
                         </span>
                         <Button
                           type="button"
@@ -169,9 +169,11 @@ export function InventoryNewPage(): ReactNode {
                     key={product.id}
                     className="flex items-center justify-between gap-2 px-3 py-2"
                   >
-                    <span className="flex items-center gap-2 text-sm">
-                      <span className="font-mono text-xs text-muted-foreground">{product.sku}</span>
-                      {product.name}
+                    <span className="flex min-w-0 items-center gap-2 text-sm">
+                      <span className="shrink-0 font-mono text-xs text-muted-foreground">
+                        {product.sku}
+                      </span>
+                      <span className="truncate">{product.name}</span>
                     </span>
                     <button
                       type="button"

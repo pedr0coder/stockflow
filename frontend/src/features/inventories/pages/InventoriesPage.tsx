@@ -115,7 +115,11 @@ export function InventoriesPage(): ReactNode {
           setPageIndex(0);
         }}
       >
-        <SelectTrigger size="sm" className="w-52">
+        <SelectTrigger
+          size="sm"
+          className="w-full sm:w-52"
+          aria-label="Filtrar por situação do inventário"
+        >
           <SelectValue placeholder="Situação" />
         </SelectTrigger>
         <SelectContent>
@@ -138,6 +142,24 @@ export function InventoriesPage(): ReactNode {
           description: 'Abra um inventário para iniciar uma contagem física.',
           icon: ClipboardList,
         }}
+        renderCard={(row) => (
+          <Link to={`/inventories/${row.id}`} className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-mono text-sm font-medium hover:underline">{row.code}</span>
+              <Badge variant="outline" className={STATUS_BADGE_CLASS[row.status]}>
+                {STATUS_LABEL[row.status]}
+              </Badge>
+            </div>
+            <span className="text-xs text-muted-foreground">
+              Iniciado em {formatDate(row.startedAt)} · Aberto por {row.createdBy.name}
+            </span>
+            {row.approvedBy ? (
+              <span className="text-xs text-muted-foreground">
+                Aprovado por {row.approvedBy.name}
+              </span>
+            ) : null}
+          </Link>
+        )}
         {...(statusFilter !== ALL
           ? {
               onClearFilters: () => {

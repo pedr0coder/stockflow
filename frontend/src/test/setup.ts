@@ -32,4 +32,8 @@ if (typeof Element !== 'undefined') {
   if (!Element.prototype.scrollIntoView) {
     Element.prototype.scrollIntoView = () => undefined;
   }
+
+  if (!Element.prototype.scrollTo) {
+    Element.prototype.scrollTo = () => undefined;
+  }
 }

@@ -90,7 +90,7 @@ describe('ProductsPage', () => {
     vi.unstubAllGlobals();
   });
 
-  it('mostra os produtos reais, com saldo e situação de estoque formatados', async () => {
+  it('mostra os produtos reais, com saldo e situação de estoque formatados na tabela e nos cards mobile', async () => {
     mockApi(page([PRODUTO_BAIXO]));
 
     renderWithProviders(<ProductsPage />);
@@ -100,6 +100,12 @@ describe('ProductsPage', () => {
     // Decimal exibido como veio da API (3 casas), nunca `Number()`.
     expect(table.getByText('2,000')).toBeInTheDocument();
     expect(table.getByText('Estoque baixo')).toBeInTheDocument();
+
+    const cards = within(screen.getByRole('list'));
+    expect(cards.getByText('Chave de fenda')).toBeInTheDocument();
+    expect(cards.getByText('Ativo')).toBeInTheDocument();
+    expect(cards.getByRole('link', { name: 'Editar' })).toBeInTheDocument();
+    expect(cards.getByRole('button', { name: /inativar/i })).toBeInTheDocument();
   });
 
   it('estado vazio quando não há produto cadastrado', async () => {

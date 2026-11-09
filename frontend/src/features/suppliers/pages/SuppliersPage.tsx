@@ -179,7 +179,11 @@ export function SuppliersPage(): ReactNode {
             setPageIndex(0);
           }}
         >
-          <SelectTrigger size="sm" className="w-40">
+          <SelectTrigger
+            size="sm"
+            className="w-full sm:w-40"
+            aria-label="Filtrar por situação do fornecedor"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -201,22 +205,61 @@ export function SuppliersPage(): ReactNode {
           icon: Truck,
         }}
         renderCard={(row) => (
-          <Link to={`/suppliers/${row.id}`} className="flex flex-col gap-1.5">
-            <div className="flex items-start justify-between gap-2">
-              <span className="font-medium">{row.name}</span>
-              {row.isActive ? (
-                <Badge variant="outline" className="font-normal">
-                  Ativo
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="border-transparent bg-muted font-normal">
-                  Inativo
-                </Badge>
-              )}
-            </div>
-            <span className="text-xs text-muted-foreground">{row.taxId ?? '—'}</span>
-            <span className="text-sm text-muted-foreground">{row.email ?? '—'}</span>
-          </Link>
+          <div className="flex flex-col gap-2">
+            <Link to={`/suppliers/${row.id}`} className="flex flex-col gap-1.5">
+              <div className="flex items-start justify-between gap-2">
+                <span className="font-medium hover:underline">{row.name}</span>
+                {row.isActive ? (
+                  <Badge variant="outline" className="font-normal">
+                    Ativo
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="border-transparent bg-muted font-normal">
+                    Inativo
+                  </Badge>
+                )}
+              </div>
+              <span className="text-xs text-muted-foreground">{row.taxId ?? '—'}</span>
+              <span className="break-all text-sm text-muted-foreground">{row.email ?? '—'}</span>
+            </Link>
+
+            {canManage ? (
+              <div className="flex items-center justify-end gap-2 border-t pt-2">
+                <ConfirmDialog
+                  trigger={
+                    <Button variant="ghost" size="sm">
+                      {row.isActive ? 'Inativar' : 'Ativar'}
+                    </Button>
+                  }
+                  title={
+                    row.isActive
+                      ? `Inativar o fornecedor ${row.name}?`
+                      : `Ativar o fornecedor ${row.name}?`
+                  }
+                  description={
+                    row.isActive
+                      ? 'Produtos vinculados continuam cadastrados, sem fornecedor associado.'
+                      : 'O fornecedor volta a aparecer nas opções de cadastro de produto.'
+                  }
+                  destructive={row.isActive}
+                  onConfirm={async () => {
+                    try {
+                      await setStatusMutation.mutateAsync({
+                        id: row.id,
+                        isActive: !row.isActive,
+                      });
+                    } catch (err) {
+                      toast.error(
+                        err instanceof ApiError
+                          ? messageForCode(err.code, err.message)
+                          : 'Não foi possível alterar a situação do fornecedor.',
+                      );
+                    }
+                  }}
+                />
+              </div>
+            ) : null}
+          </div>
         )}
         {...(debouncedSearch.length > 0 || statusFilter !== 'active'
           ? { onClearFilters: clearFilters }

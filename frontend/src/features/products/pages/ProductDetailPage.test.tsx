@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -115,11 +115,18 @@ describe('ProductDetailPage', () => {
     await screen.findByText('42,500');
     await user.click(screen.getByRole('tab', { name: 'Histórico' }));
 
-    expect(await screen.findByText('Entrada')).toBeInTheDocument();
+    const table = within(
+      await screen.findByRole('table', { name: 'Histórico de movimentações de Chave de fenda' }),
+    );
+    expect(table.getByText('Entrada')).toBeInTheDocument();
     // O motivo é traduzido, não o código cru (Marco 6C: REASON_LABEL,
     // reaproveitado aqui do mesmo mapa que a tela de movimentações usa).
-    expect(screen.getByText('Compra')).toBeInTheDocument();
-    expect(screen.getByText('Carla Operadora')).toBeInTheDocument();
+    expect(table.getByText('Compra')).toBeInTheDocument();
+    expect(table.getByText('Carla Operadora')).toBeInTheDocument();
+
+    const [, cardList] = screen.getAllByRole('list');
+    expect(within(cardList!).getByText('Entrada')).toBeInTheDocument();
+    expect(within(cardList!).getByText('Compra')).toBeInTheDocument();
   });
 
   it('OPERATOR não vê os botões de editar ou inativar', async () => {

@@ -124,6 +124,31 @@ export function AuditPage(): ReactNode {
           description: 'Ações relevantes do sistema aparecem aqui conforme acontecem.',
           icon: ScrollText,
         }}
+        renderCard={(row) => (
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-mono text-sm font-medium">{row.action}</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSelected(row);
+                }}
+              >
+                Ver
+              </Button>
+            </div>
+            <span className="break-all text-xs text-muted-foreground">
+              {formatDateTime(row.createdAt)} · {row.actorEmail ?? '—'}
+            </span>
+            {row.entity !== null ? (
+              <span className="font-mono text-xs text-muted-foreground">
+                {row.entity}
+                {row.entityId !== null ? ` · ${row.entityId.slice(0, 8)}…` : ''}
+              </span>
+            ) : null}
+          </div>
+        )}
         {...(hasFilters ? { onClearFilters: clearFilters } : {})}
         state={
           isPending

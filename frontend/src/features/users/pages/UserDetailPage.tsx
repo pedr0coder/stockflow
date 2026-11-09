@@ -157,7 +157,7 @@ export function UserDetailPage(): ReactNode {
             <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
                 <dt className="text-xs text-muted-foreground">E-mail</dt>
-                <dd>{targetUser.email}</dd>
+                <dd className="break-all">{targetUser.email}</dd>
               </div>
               <div>
                 <dt className="text-xs text-muted-foreground">Situação</dt>
@@ -195,7 +195,7 @@ export function UserDetailPage(): ReactNode {
           <CardContent className="flex flex-col gap-4 pt-6">
             <h2 className="text-sm font-medium">Papel e acesso</h2>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <Select
                 value={targetUser.role}
                 disabled={roleMutation.isPending}
@@ -221,7 +221,7 @@ export function UserDetailPage(): ReactNode {
                   );
                 }}
               >
-                <SelectTrigger className="w-48">
+                <SelectTrigger className="w-full sm:w-48" aria-label="Papel do usuário">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

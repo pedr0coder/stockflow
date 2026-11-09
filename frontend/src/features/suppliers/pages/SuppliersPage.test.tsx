@@ -59,7 +59,7 @@ describe('SuppliersPage', () => {
     vi.unstubAllGlobals();
   });
 
-  it('mostra os fornecedores reais vindos da API', async () => {
+  it('mostra os fornecedores reais vindos da API na tabela e nos cards mobile', async () => {
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, page([FORNECEDOR])));
 
     renderWithProviders(<SuppliersPage />);
@@ -67,6 +67,10 @@ describe('SuppliersPage', () => {
     const table = await findTable();
     expect(table.getByText('Distribuidora Norte')).toBeInTheDocument();
     expect(table.getByText('11.111.111/0001-11')).toBeInTheDocument();
+
+    const cards = within(screen.getByRole('list'));
+    expect(cards.getByText('Distribuidora Norte')).toBeInTheDocument();
+    expect(cards.getByRole('button', { name: /inativar/i })).toBeInTheDocument();
   });
 
   it('estado vazio quando não há fornecedor cadastrado', async () => {

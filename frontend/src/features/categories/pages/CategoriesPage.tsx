@@ -168,7 +168,11 @@ export function CategoriesPage(): ReactNode {
             setPageIndex(0);
           }}
         >
-          <SelectTrigger size="sm" className="w-40">
+          <SelectTrigger
+            size="sm"
+            className="w-full sm:w-40"
+            aria-label="Filtrar por situação da categoria"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -189,6 +193,75 @@ export function CategoriesPage(): ReactNode {
           description: 'Cadastre a primeira categoria para organizar os produtos.',
           icon: Shapes,
         }}
+        renderCard={(category) => (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-start justify-between gap-2">
+              <span className="font-medium">{category.name}</span>
+              {category.isActive ? (
+                <Badge variant="outline" className="font-normal">
+                  Ativa
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="border-transparent bg-muted font-normal">
+                  Inativa
+                </Badge>
+              )}
+            </div>
+            <span className="text-sm text-muted-foreground">{category.description ?? '—'}</span>
+            <span className="text-xs text-muted-foreground">
+              Criada em {formatDate(category.createdAt)}
+            </span>
+
+            {canManage ? (
+              <div className="flex items-center justify-end gap-2 border-t pt-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setEditing(category);
+                    setSheetOpen(true);
+                  }}
+                >
+                  <Pencil aria-hidden="true" className="size-4" />
+                  <span className="sr-only">Editar {category.name}</span>
+                </Button>
+
+                <ConfirmDialog
+                  trigger={
+                    <Button variant="ghost" size="sm">
+                      {category.isActive ? 'Inativar' : 'Ativar'}
+                    </Button>
+                  }
+                  title={
+                    category.isActive
+                      ? `Inativar a categoria ${category.name}?`
+                      : `Ativar a categoria ${category.name}?`
+                  }
+                  description={
+                    category.isActive
+                      ? 'Categorias com produto ativo vinculado não podem ser inativadas.'
+                      : 'A categoria volta a aparecer nas opções de cadastro de produto.'
+                  }
+                  destructive={category.isActive}
+                  onConfirm={async () => {
+                    try {
+                      await setStatusMutation.mutateAsync({
+                        id: category.id,
+                        isActive: !category.isActive,
+                      });
+                    } catch (error) {
+                      toast.error(
+                        error instanceof ApiError
+                          ? messageForCode(error.code, error.message)
+                          : 'Não foi possível alterar a situação da categoria.',
+                      );
+                    }
+                  }}
+                />
+              </div>
+            ) : null}
+          </div>
+        )}
         state={
           isPending
             ? { status: 'loading' }

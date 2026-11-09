@@ -223,6 +223,25 @@ export function ProductDetailPage(): ReactNode {
               title: 'Nenhuma movimentação registrada',
               description: 'As entradas, saídas e ajustes deste produto aparecem aqui.',
             }}
+            renderCard={(row) => (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <MovementTypeBadge type={row.type} />
+                  <span className="font-mono text-sm font-medium">
+                    {formatQuantity(row.quantity)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2 text-sm">
+                  <span>{REASON_LABEL[row.reason as MovementReasonValue] ?? row.reason}</span>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    Saldo: {formatQuantity(row.stockAfter)}
+                  </span>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  {formatDateTime(row.createdAt)} · {row.user.name}
+                </span>
+              </div>
+            )}
             state={movementsQuery.isPending ? { status: 'loading' } : { status: 'ready' }}
             server={{
               pageIndex: movementsPage,

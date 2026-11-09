@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/render';
@@ -43,6 +43,15 @@ const CATEGORIA_FERRAMENTAS = {
   updatedAt: '2026-01-10T00:00:00.000Z',
 };
 
+/**
+ * Em jsdom, tabela (`hidden sm:block`) e lista de cards (`sm:hidden`) coexistem
+ * no DOM (M7C-4). Asserções da tabela ficam escopadas a `findTable()`, como em
+ * `ProductsPage.test.tsx` e `SuppliersPage.test.tsx`.
+ */
+async function findTable() {
+  return within(await screen.findByRole('table', { name: 'Lista de categorias' }));
+}
+
 describe('CategoriesPage', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn());
@@ -53,13 +62,19 @@ describe('CategoriesPage', () => {
   });
 
   describe('listagem', () => {
-    it('mostra as categorias reais vindas da API', async () => {
+    it('mostra as categorias reais vindas da API na tabela e nos cards mobile', async () => {
       vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, page([CATEGORIA_FERRAMENTAS])));
 
       renderWithProviders(<CategoriesPage />);
 
-      expect(await screen.findByText('Ferramentas')).toBeInTheDocument();
-      expect(screen.getByText('Ferramentas manuais e elétricas.')).toBeInTheDocument();
+      const table = await findTable();
+      expect(table.getByText('Ferramentas')).toBeInTheDocument();
+      expect(table.getByText('Ferramentas manuais e elétricas.')).toBeInTheDocument();
+
+      const cards = within(screen.getByRole('list'));
+      expect(cards.getByText('Ferramentas')).toBeInTheDocument();
+      expect(cards.getByRole('button', { name: /editar ferramentas/i })).toBeInTheDocument();
+      expect(cards.getByRole('button', { name: /inativar/i })).toBeInTheDocument();
     });
 
     it('estado vazio quando não há categoria cadastrada', async () => {
@@ -82,7 +97,8 @@ describe('CategoriesPage', () => {
 
       await user.click(screen.getByRole('button', { name: /tentar novamente/i }));
 
-      expect(await screen.findByText('Ferramentas')).toBeInTheDocument();
+      const table = await findTable();
+      expect(table.getByText('Ferramentas')).toBeInTheDocument();
     });
 
     it('trocar o filtro de situação refaz a busca com o parâmetro certo', async () => {
@@ -92,7 +108,7 @@ describe('CategoriesPage', () => {
         .mockResolvedValueOnce(jsonResponse(200, page([])));
 
       renderWithProviders(<CategoriesPage />);
-      await screen.findByText('Ferramentas');
+      await findTable();
 
       await user.click(screen.getByRole('combobox'));
       await user.click(await screen.findByRole('option', { name: 'Todas' }));
@@ -119,7 +135,8 @@ describe('CategoriesPage', () => {
       await user.click(screen.getByRole('button', { name: 'Salvar' }));
 
       await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-      expect(await screen.findByText('Ferramentas')).toBeInTheDocument();
+      const table = await findTable();
+      expect(table.getByText('Ferramentas')).toBeInTheDocument();
     });
 
     it('nome muito curto é rejeitado antes de chamar a API', async () => {
@@ -151,9 +168,9 @@ describe('CategoriesPage', () => {
         );
 
       renderWithProviders(<CategoriesPage />);
-      await screen.findByText('Ferramentas');
+      const table = await findTable();
 
-      await user.click(screen.getByRole('button', { name: /inativar/i }));
+      await user.click(table.getByRole('button', { name: /inativar/i }));
       await user.click(screen.getByRole('button', { name: 'Confirmar' }));
 
       expect(
@@ -161,7 +178,7 @@ describe('CategoriesPage', () => {
       ).toBeInTheDocument();
       // A categoria continua ativa na tela: a mutação falhou, a lista não foi
       // reescrita como se tivesse funcionado.
-      expect(screen.getByRole('button', { name: /inativar/i })).toBeInTheDocument();
+      expect(table.getByRole('button', { name: /inativar/i })).toBeInTheDocument();
     });
   });
 
@@ -172,7 +189,7 @@ describe('CategoriesPage', () => {
       renderWithProviders(<CategoriesPage />, {
         user: { id: 'u2', name: 'Op', email: 'op@x.com', role: 'OPERATOR' },
       });
-      await screen.findByText('Ferramentas');
+      await findTable();
 
       expect(screen.queryByRole('button', { name: /nova categoria/i })).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: /inativar/i })).not.toBeInTheDocument();

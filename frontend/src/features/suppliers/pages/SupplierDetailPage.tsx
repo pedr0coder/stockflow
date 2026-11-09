@@ -219,6 +219,18 @@ export function SupplierDetailPage(): ReactNode {
               title: 'Nenhum produto vinculado',
               description: 'Produtos cadastrados com este fornecedor aparecem aqui.',
             }}
+            renderCard={(row) => (
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="font-medium">{row.name}</span>
+                  <StockBadge status={classifyStock(row.currentStock, row.minStock)} />
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-xs text-muted-foreground">{row.sku}</span>
+                  <span className="font-mono text-sm">{formatQuantity(row.currentStock)}</span>
+                </div>
+              </div>
+            )}
             state={productsQuery.isPending ? { status: 'loading' } : { status: 'ready' }}
             server={{
               pageIndex: productsPage,

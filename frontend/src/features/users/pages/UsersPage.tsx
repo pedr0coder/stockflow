@@ -116,7 +116,7 @@ export function UsersPage(): ReactNode {
             setPageIndex(0);
           }}
         >
-          <SelectTrigger size="sm" className="w-40">
+          <SelectTrigger size="sm" className="w-full sm:w-40" aria-label="Filtrar por papel">
             <SelectValue placeholder="Papel" />
           </SelectTrigger>
           <SelectContent>
@@ -136,7 +136,11 @@ export function UsersPage(): ReactNode {
             setPageIndex(0);
           }}
         >
-          <SelectTrigger size="sm" className="w-36">
+          <SelectTrigger
+            size="sm"
+            className="w-full sm:w-36"
+            aria-label="Filtrar por situação do usuário"
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -157,6 +161,29 @@ export function UsersPage(): ReactNode {
           description: 'Cadastre a primeira conta de acesso.',
           icon: UsersIcon,
         }}
+        renderCard={(row) => (
+          <Link to={`/users/${row.id}`} className="flex flex-col gap-1.5">
+            <div className="flex items-start justify-between gap-2">
+              <span className="font-medium hover:underline">{row.name}</span>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <Badge variant="outline">{ROLE_LABEL[row.role]}</Badge>
+                {row.isActive ? (
+                  <Badge variant="outline" className="font-normal">
+                    Ativo
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="border-transparent bg-muted font-normal">
+                    Inativo
+                  </Badge>
+                )}
+              </div>
+            </div>
+            <span className="break-all text-sm text-muted-foreground">{row.email}</span>
+            <span className="text-xs text-muted-foreground">
+              Último acesso: {row.lastLoginAt !== null ? formatDateTime(row.lastLoginAt) : 'Nunca'}
+            </span>
+          </Link>
+        )}
         {...(hasFilters ? { onClearFilters: clearFilters } : {})}
         state={
           isPending
