@@ -91,6 +91,7 @@ test.describe('Marco 7C — Acessibilidade WCAG 2.2 AA, Responsividade e Teclado
       categoryId: category.id,
     });
     await apiCreateEntry(request, manager, product.id, '25.000');
+    await apiOpenInventory(request, manager, [product.id], `Inventário A11y ${suffix}`);
 
     // ── 1.1 Página pública (/login): estado inicial e com erros de validação ──
     await page.setViewportSize({ width: 1440, height: 900 });
@@ -98,7 +99,9 @@ test.describe('Marco 7C — Acessibilidade WCAG 2.2 AA, Responsividade e Teclado
     await waitForPageReady(page);
     await assertNoAxeViolations(page, '/login (inicial)');
 
-    await page.getByRole('button', { name: 'Entrar' }).click();
+    const loginSubmitBtn = page.getByRole('button', { name: 'Entrar' });
+    await loginSubmitBtn.click();
+    await loginSubmitBtn.hover();
     await expect(page.getByRole('alert').first()).toBeVisible();
     await assertNoAxeViolations(page, '/login (com erros de validação)');
 
@@ -167,6 +170,7 @@ test.describe('Marco 7C — Acessibilidade WCAG 2.2 AA, Responsividade e Teclado
       categoryId: category.id,
     });
     await apiCreateEntry(request, manager, product.id, '10.000');
+    await apiOpenInventory(request, manager, [product.id], `Inventário Resp ${suffix}`);
 
     await uiLogin(page, 'admin@stockflow.local');
 

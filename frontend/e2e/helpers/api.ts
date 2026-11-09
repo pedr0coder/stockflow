@@ -152,7 +152,57 @@ export async function uiLogin(page: Page, email: string): Promise<void> {
   }
 }
 
-export async function apiLogin(request: APIRequestContext, email: string): Promise<ApiSession> {
+interface CachedApiSession {
+  session: ApiSession;
+  expiresAtMs: number;
+}
+
+/**
+ * Cache em memória por worker (exclusivo de E2E) para reutilizar o `accessToken`
+ * de criação de fixtures (`JWT_ACCESS_TTL=15m`) entre os testes da mesma execução,
+ * evitando estourar o limite de 5 tentativas / 15 min do `LoginThrottlerGuard` em
+ * `POST /api/v1/auth/login` quando múltiplos specs rodam em sequência.
+ *
+ * - Isolado por e-mail normalizado (`trim().toLowerCase()`).
+ * - Verifica `exp` do JWT com margem de segurança de 60s para nunca reutilizar token expirado.
+ * - Não afeta `uiLogin` nem testes de renovação/autenticação (e suporta `forceRefresh`).
+ */
+const apiSessionCache = new Map<string, CachedApiSession>();
+const TOKEN_EXPIRY_SAFETY_MARGIN_MS = 60_000;
+const DEFAULT_TOKEN_TTL_MS = 14 * 60 * 1000;
+
+function extractJwtExpiresAtMs(accessToken: string): number {
+  try {
+    const payloadPart = accessToken.split('.')[1];
+    if (!payloadPart) {
+      return Date.now() + DEFAULT_TOKEN_TTL_MS;
+    }
+    const normalized = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
+    const decoded = JSON.parse(atob(normalized)) as { exp?: unknown };
+    if (typeof decoded.exp === 'number' && Number.isFinite(decoded.exp)) {
+      return decoded.exp * 1000;
+    }
+  } catch {
+    // Fallback seguro caso o token não possua payload base64url padrão
+  }
+  return Date.now() + DEFAULT_TOKEN_TTL_MS;
+}
+
+export async function apiLogin(
+  request: APIRequestContext,
+  email: string,
+  options?: { forceRefresh?: boolean },
+): Promise<ApiSession> {
+  const cacheKey = email.trim().toLowerCase();
+
+  if (!options?.forceRefresh) {
+    const cached = apiSessionCache.get(cacheKey);
+    if (cached && Date.now() + TOKEN_EXPIRY_SAFETY_MARGIN_MS < cached.expiresAtMs) {
+      return cached.session;
+    }
+    apiSessionCache.delete(cacheKey);
+  }
+
   const response = await request.post('/api/v1/auth/login', {
     data: { email, password: seedPasswordFor(email) },
   });
@@ -162,8 +212,13 @@ export async function apiLogin(request: APIRequestContext, email: string): Promi
   }
 
   const body = (await response.json()) as { accessToken: string };
+  const session: ApiSession = { accessToken: body.accessToken };
+  apiSessionCache.set(cacheKey, {
+    session,
+    expiresAtMs: extractJwtExpiresAtMs(body.accessToken),
+  });
 
-  return { accessToken: body.accessToken };
+  return session;
 }
 
 function authHeader(session: ApiSession): Record<string, string> {

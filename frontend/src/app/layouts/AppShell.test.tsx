@@ -137,6 +137,8 @@ describe('AppShell e Acessibilidade WCAG 2.2 AA (M7C-3)', () => {
     expect(contrastRatio(textMuted, bg)).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(textMuted, surface)).toBeGreaterThanOrEqual(4.5);
     expect(contrastRatio(primary, bg)).toBeGreaterThanOrEqual(4.5);
+    // Estado :hover do botão primário (`hover:bg-primary/90` composto sobre `--sf-bg`)
+    expect(contrastRatio(blendOver(primary, bg, 0.9), bg)).toBeGreaterThanOrEqual(4.5);
 
     // Contraste sobre fundo branco (--sf-bg) e texto branco em botão sólido
     expect(contrastRatio(success, bg)).toBeGreaterThanOrEqual(4.5);

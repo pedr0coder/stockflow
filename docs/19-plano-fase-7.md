@@ -2227,6 +2227,23 @@ Durante a pré-validação em Chromium headless com `AxeBuilder` (tags `['wcag2a
    - Em diálogos controlados via prop `open` sem `<SheetTrigger>` (como `CategoryFormSheet`, `AuditPage` e o menu mobile de `Sidebar`), o `@radix-ui/react-dialog` chamava `event.preventDefault()` em `onCloseAutoFocus` e tentava focar `triggerRef.current` (`null`), além de o `autoFocus` sintético do React em `CategoryFormSheet` mover o foco antes da montagem do `FocusScope`.
    - **Correção**: removido o `autoFocus` redundante em `CategoryFormSheet.tsx` (deixando o `FocusScope` do Radix focar automaticamente o primeiro campo) e registrado `previousFocusRef` em `onOpenAutoFocus` / restaurado em `onCloseAutoFocus` dentro de `SheetContent` (`sheet.tsx`), garantindo retorno exato do foco ao botão gatilho ao fechar com `Escape` (coberto por novo teste em `CategoriesPage.test.tsx` e na suíte E2E).
 
+#### 2.1. Diagnóstico do GitHub Actions CI #17 (`e233e35`) e correções aplicadas
+
+Na execução do GitHub Actions **CI #17** (commit `e233e358f21dc52895023b5dba6e3554c532a997`, Run ID `42558061542`), os jobs `Segredos`, `Formatação`, `Frontend` (`274` testes unitários + build) e `Backend` (`279` testes unitários + `462` testes de integração com PostgreSQL 17 real + build) passaram integralmente, assim como o `Teste 3` (`navegação por teclado, skip link, retorno de foco, erros ARIA, contagem com Enter e movimento reduzido`) do job `E2E`. Os 4 casos que falharam no step `Testes E2E` decorreram de **3 causas raízes distintas**, todas corrigidas na origem:
+
+1. **Contraste de cor insuficiente no estado `:hover` do botão primário (`frontend/src/index.css` — regra `color-contrast` do `AxeBuilder` em `/login (com erros de validação)`)**:
+   - **Erro no CI #17**: `Element has insufficient color contrast of 4.35 (foreground color: #ffffff, background color: #3573ed, font size: 10.5pt (14px), font weight: normal). Expected contrast ratio of 4.5:1` em `<button data-slot="button" data-variant="default" type="submit">`.
+   - **Causa raiz (Código / Token CSS)**: após `click()` no botão `"Entrar"`, o ponteiro permanece em `:hover` sobre o botão, ativando `hover:bg-primary/90`. O token `--sf-primary: oklch(54.6% 0.215 262)` possuía contraste `5,16:1` em 100% de opacidade, mas quando composto a 90% de opacidade sobre `--sf-bg` branco (`#3573ed`) caía para **`4,35:1` (`< 4,5:1`)**.
+   - **Correção**: recalibrado `--sf-primary` em `frontend/src/index.css` para **`oklch(51.5% 0.215 262)`** (mesmo matiz `262` e croma `0.215`), elevando o contraste para **`5,91:1`** em 100% (`bg-primary`) e **`4,90:1`** (`>= 4,5:1`) em 90% (`hover:bg-primary/90`), e adicionada asserção matemática `contrastRatio(blendOver(primary, bg, 0.9), bg) >= 4.5` em `frontend/src/app/layouts/AppShell.test.tsx`.
+2. **Ausência de fixture de inventário antes de visitar `/inventories` no Teste 2 (`frontend/e2e/accessibility-responsiveness.spec.ts`)**:
+   - **Erro no CI #17**: `expect(locator).toBeVisible() failed — Locator: locator('main ul.sm\\:hidden').first()` em `accessibility-responsiveness.spec.ts:209:65` ao iterar por `/inventories`.
+   - **Causa raiz (Teste / Fixture)**: o `prisma/seed.ts` não cria inventários; como `apiOpenInventory` só era chamado no `Teste 3`, durante os `Testes 1 e 2` a rota `/inventories` exibia `<EmptyState>` em vez do `DataTable` (`ul.sm:hidden`).
+   - **Correção**: adicionada chamada a `await apiOpenInventory(request, manager, [product.id], ...)` na preparação de fixtures dos `Testes 1 e 2` em `frontend/e2e/accessibility-responsiveness.spec.ts`.
+3. **Rate limiting (`429 Too Many Requests`) em `POST /api/v1/auth/login` para `gerente@stockflow.local` (`frontend/e2e/helpers/api.ts`)**:
+   - **Erro no CI #17**: `POST http://localhost:5183/api/v1/auth/login -> 429` em `inventory-approval.spec.ts` e `stock-cycle.spec.ts`.
+   - **Causa raiz (Teste / Reuso de Sessão de Fixture vs. `LoginThrottlerGuard`)**: `AuthController.login` aplica `@Throttle({ default: { limit: 5, ttl: 15 * 60 * 1000 } })` por IP + e-mail. A execução sequencial dos 5 testes E2E no mesmo worker realizava 7 logins para `gerente@stockflow.local` em menos de 1 minuto (3× `apiLogin` + 1× `uiLogin` em `accessibility-responsiveness.spec.ts`, 1× `apiLogin` + 1× `uiLogin` em `inventory-approval.spec.ts` e 1× `apiLogin` em `stock-cycle.spec.ts`), atingindo `429` a partir da 6ª chamada.
+   - **Correção**: sem afrouxar o `LoginThrottlerGuard` do backend, `apiLogin(request, email)` em `frontend/e2e/helpers/api.ts` passou a reutilizar em memória (`apiSessionCache`) o `accessToken` de fixture por e-mail durante o ciclo de vida do worker (já que `JWT_ACCESS_TTL=15m` e toda a suíte roda em `< 1 min`), reduzindo o total de chamadas a `POST /api/v1/auth/login` para `gerente@stockflow.local` em toda a suíte de 7 para **3** (`1` `apiLogin` + `2` `uiLogin` reais de interface).
+
 #### 3. Suíte Oficial Playwright E2E criada (`frontend/e2e/accessibility-responsiveness.spec.ts`)
 
 1. **Teste 1 — `auditoria AxeBuilder em páginas públicas, autenticadas e estados interativos`**:
@@ -2272,13 +2289,14 @@ Durante a pré-validação em Chromium headless com `AxeBuilder` (tags `['wcag2a
 2. **Escopo da conformidade WCAG 2.2 AA**:
    - A auditoria automatizada com `@axe-core/playwright` (`0` violações em 57 estados/viewports) somada aos testes funcionais de teclado, foco, contraste OKLCH e árvore de acessibilidade cobre os critérios programaticamente verificáveis da WCAG 2.2 AA, mas **não substitui** testes assistidos por humanos utilizando leitores de tela dedicados (NVDA, JAWS, VoiceOver) em fluxos reais completos.
 
-#### 6. Inventário de arquivos da Subetapa 7C.3 (12 arquivos)
+#### 6. Inventário de arquivos da Subetapa 7C.3 (14 arquivos)
 
-- **Arquivos modificados (11)**:
+- **Arquivos modificados (13)**:
   - `docs/19-plano-fase-7.md`
   - `frontend/package.json`
   - `frontend/package-lock.json`
   - `frontend/e2e/helpers/api.ts`
+  - `frontend/src/app/layouts/AppShell.test.tsx`
   - `frontend/src/app/layouts/AuthLayout.tsx`
   - `frontend/src/components/ui/sheet.tsx`
   - `frontend/src/components/ui/table.tsx`
@@ -2286,5 +2304,6 @@ Durante a pré-validação em Chromium headless com `AxeBuilder` (tags `['wcag2a
   - `frontend/src/features/auth/pages/LoginPage.test.tsx`
   - `frontend/src/features/categories/components/CategoryFormSheet.tsx`
   - `frontend/src/features/categories/pages/CategoriesPage.test.tsx`
+  - `frontend/src/index.css`
 - **Arquivo novo (1)**:
   - `frontend/e2e/accessibility-responsiveness.spec.ts`

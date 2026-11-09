@@ -33,7 +33,10 @@
   --sf-text: oklch(21% 0.006 285);
   --sf-text-muted: oklch(55.2% 0.014 285);
 
-  --sf-primary: oklch(54.6% 0.215 262);
+  /* Primária calibrada para garantir contraste WCAG 2.2 AA (>= 4,5:1) com
+     `--sf-primary-fg` tanto em 100% (`bg-primary`, 5,91:1) quanto no estado
+     `:hover` com opacidade `/90` sobre `--sf-bg` (`hover:bg-primary/90`, 4,90:1). */
+  --sf-primary: oklch(51.5% 0.215 262);
   --sf-primary-fg: oklch(100% 0 0);
 
   /* Semântica de estoque, usada de forma igual em tabela, badge e dashboard:
