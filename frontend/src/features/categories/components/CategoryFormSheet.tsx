@@ -133,7 +133,7 @@ function CategoryForm({
         className="flex flex-1 flex-col gap-4 overflow-y-auto px-4"
       >
         <FormField label="Nome" error={errors.name?.message} required>
-          {(field) => <Input {...field} {...register('name')} autoFocus />}
+          {(field) => <Input {...field} {...register('name')} />}
         </FormField>
 
         <FormField label="Descrição" error={errors.description?.message}>

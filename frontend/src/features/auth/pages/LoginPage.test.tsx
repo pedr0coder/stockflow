@@ -177,5 +177,11 @@ describe('LoginPage', () => {
 
       expect(screen.getAllByText('(obrigatório)')).toHaveLength(2);
     });
+
+    it('expõe o título da página como cabeçalho h1 semântico', () => {
+      renderLogin();
+
+      expect(screen.getByRole('heading', { level: 1, name: 'Entrar' })).toBeInTheDocument();
+    });
   });
 });

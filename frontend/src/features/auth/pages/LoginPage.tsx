@@ -66,7 +66,9 @@ export function LoginPage(): ReactNode {
   return (
     <Card className="border shadow-none">
       <CardHeader>
-        <CardTitle className="text-xl">Entrar</CardTitle>
+        <CardTitle className="text-xl">
+          <h1>Entrar</h1>
+        </CardTitle>
         <CardDescription>Acesse com suas credenciais do StockFlow.</CardDescription>
       </CardHeader>
 

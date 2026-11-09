@@ -195,4 +195,25 @@ describe('CategoriesPage', () => {
       expect(screen.queryByRole('button', { name: /inativar/i })).not.toBeInTheDocument();
     });
   });
+
+  describe('acessibilidade por teclado', () => {
+    it('restaura o foco ao botão "Nova categoria" ao fechar o diálogo com Escape', async () => {
+      vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, page([CATEGORIA_FERRAMENTAS])));
+      const user = userEvent.setup();
+
+      renderWithProviders(<CategoriesPage />);
+      await findTable();
+
+      const trigger = screen.getByRole('button', { name: /nova categoria/i });
+      trigger.focus();
+      expect(trigger).toHaveFocus();
+
+      await user.keyboard('{Enter}');
+      expect(await screen.findByRole('dialog')).toBeInTheDocument();
+
+      await user.keyboard('{Escape}');
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(trigger).toHaveFocus();
+    });
+  });
 });
