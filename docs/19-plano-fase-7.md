@@ -1987,8 +1987,8 @@ Para manter controle rigoroso de escopo e verificação incremental, a execuçã
 - **Status de execução do Marco 7C**:
   - **Planejamento técnico concluído e aprovado.**
   - **Subetapa `7C.1` (Performance Frontend e Backend/N+1): concluída, auditada e publicada no commit `1e6cb17` (GitHub Actions CI #14 100% verde, incluindo 462 testes de integração e 2 fluxos E2E com PostgreSQL real).**
-  - **Subetapa `7C.2` (`M7C-3` Acessibilidade WCAG 2.2 AA, `M7C-4` Responsividade e `M7C-5` Movimento Reduzido): concluída e verificada localmente (lint, typecheck, 272 testes no Vitest, build de produção, Prettier e 33 cenários multi-viewport em Chromium headless com APIs mockadas), pronta para publicação.**
-  - **Subetapa `7C.3` (Auditoria automatizada `@axe-core/playwright`, revisão manual de acessibilidade e E2E com banco real): pendente de autorização.**
+  - **Subetapa `7C.2` (`M7C-3` Acessibilidade WCAG 2.2 AA, `M7C-4` Responsividade e `M7C-5` Movimento Reduzido): concluída, publicada no commit `224f5dc` e confirmada com GitHub Actions CI totalmente verde.**
+  - **Subetapa `7C.3` (Auditoria Final do Marco 7C — integração de `@axe-core/playwright`, suíte E2E de acessibilidade/responsividade/teclado e regressão completa): implementada e validada localmente (279 testes backend, 274 testes frontend, 57 auditorias `AxeBuilder` em Chromium headless com 0 violações, builds de produção e auditoria de segurança), aguardando autorização de publicação e validação final E2E/integração com PostgreSQL real no GitHub Actions.**
 
 ---
 
@@ -2197,3 +2197,94 @@ Para manter controle rigoroso de escopo e verificação incremental, a execuçã
 - **Arquivos novos (2)**:
   - `frontend/src/app/layouts/AppShell.test.tsx`
   - `frontend/src/features/inventories/components/InventoryCountCell.test.tsx`
+
+---
+
+### 19.18.13 Execução e resultados reais da Subetapa 7C.3 — Auditoria Final do Marco 7C (2026-11-09)
+
+#### 1. Integração do `@axe-core/playwright` (`D7C-1`)
+
+- **Versão instalada**: `@axe-core/playwright@~4.14.0` (`4.14.0` exata no `frontend/package-lock.json`, acompanhada apenas de `axe-core@4.14.0`), compatível com `@playwright/test@1.64.1` (`peerDependencies: { "playwright-core": ">= 1.0.0" }`).
+- **Impacto no lockfile e segurança**:
+  - Adicionados exatamente **2 pacotes** de desenvolvimento (`@axe-core/playwright` e `axe-core`), sem alterar nenhuma outra dependência da árvore.
+  - `npm --prefix frontend audit --omit=dev` e `npm --prefix backend audit --omit=dev`: **0 vulnerabilidades** em dependências de produção.
+  - Verificação nos artefatos de `frontend/dist/`: **0 ocorrências** de `axe-core` ou `AxeBuilder` no bundle de produção.
+
+#### 2. Correções de acessibilidade e foco na origem identificadas pela auditoria `AxeBuilder` e testes de teclado
+
+Durante a pré-validação em Chromium headless com `AxeBuilder` (tags `['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice']`) e testes funcionais de teclado, foram identificados e corrigidos na origem **4 pontos**:
+
+1. **Landmark `<main>` na casca pública (`frontend/src/app/layouts/AuthLayout.tsx` — regra `region`)**:
+   - O cabeçalho da marca (`StockFlow`) e o rodapé descritivo na tela de login estavam fora do elemento `<main>`, gerando violação da regra `region` ("Ensure all page content is contained by landmarks").
+   - **Correção**: o container raiz de `AuthLayout` passou a ser `<main>`, englobando integralmente a identidade visual, o `<Outlet />` e o texto complementar.
+2. **Cabeçalho semântico `<h1>` na página de login (`frontend/src/features/auth/pages/LoginPage.tsx` — regra `page-has-heading-one`)**:
+   - `CardTitle` renderiza um `<div>`, de modo que `/login` não possuía um `<h1>` de nível 1.
+   - **Correção**: o título `"Entrar"` dentro de `CardTitle` passou a ser envolvido por `<h1>Entrar</h1>` (coberto por novo teste unitário em `LoginPage.test.tsx`).
+3. **Região rolável acessível por teclado em tabelas (`frontend/src/components/ui/table.tsx` — regra `scrollable-region-focusable`)**:
+   - Em `/reports` no viewport `375×812`, as tabelas analíticas possuem rolagem horizontal (`overflow-x-auto`) e células puramente textuais (sem links ou botões focáveis no interior), gerando violação `scrollable-region-focusable` (`impact: serious`).
+   - **Correção**: adicionado `tabIndex={0}` e anel de foco visível (`focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden`) ao container `<div data-slot="table-container">` em `table.tsx`, permitindo que usuários de teclado foquem e rolem horizontalmente qualquer tabela com as setas direcionais.
+4. **Restauração determinística de foco ao fechar `Sheet` controlado (`frontend/src/components/ui/sheet.tsx` e `frontend/src/features/categories/components/CategoryFormSheet.tsx`)**:
+   - Em diálogos controlados via prop `open` sem `<SheetTrigger>` (como `CategoryFormSheet`, `AuditPage` e o menu mobile de `Sidebar`), o `@radix-ui/react-dialog` chamava `event.preventDefault()` em `onCloseAutoFocus` e tentava focar `triggerRef.current` (`null`), além de o `autoFocus` sintético do React em `CategoryFormSheet` mover o foco antes da montagem do `FocusScope`.
+   - **Correção**: removido o `autoFocus` redundante em `CategoryFormSheet.tsx` (deixando o `FocusScope` do Radix focar automaticamente o primeiro campo) e registrado `previousFocusRef` em `onOpenAutoFocus` / restaurado em `onCloseAutoFocus` dentro de `SheetContent` (`sheet.tsx`), garantindo retorno exato do foco ao botão gatilho ao fechar com `Escape` (coberto por novo teste em `CategoriesPage.test.tsx` e na suíte E2E).
+
+#### 3. Suíte Oficial Playwright E2E criada (`frontend/e2e/accessibility-responsiveness.spec.ts`)
+
+1. **Teste 1 — `auditoria AxeBuilder em páginas públicas, autenticadas e estados interativos`**:
+   - Audita `/login` (inicial e com erros de validação), `/dashboard`, `/products`, `/products/new` (inicial e com erros de validação), `/products/:id`, `/categories` (listagem e modal aberto), `/suppliers`, `/movements`, `/movements/new`, `/inventories`, `/inventories/new`, `/reports`, `/users`, `/users/new` e `/audit` (listagem e `Sheet` de detalhes JSON aberto), exigindo `0` violações no `AxeBuilder` e `0` overflows horizontais.
+2. **Teste 2 — `responsividade multi-viewport (375x812, 768x1024, 1440x900), árvore de acessibilidade e RBAC mobile`**:
+   - Valida ausência de overflow horizontal (`scrollWidth <= clientWidth` em `<html>` e `<main id="conteudo">`) e `0` violações `AxeBuilder` nos 3 viewports.
+   - Comprova na árvore de acessibilidade que, em `375×812`, `getByRole('table')` tem contagem `0` nas listagens com `renderCard` (tabela desktop oculta com `display: none` não vaza para leitores de tela nem gera IDs duplicados), enquanto `main ul.sm:hidden` está visível; e que em `768×1024` / `1440×900` a tabela está visível e a lista mobile oculta.
+   - Valida a abertura e fechamento do menu de navegação mobile (`"Abrir navegação"` -> `Sheet` -> `"Fechar"`) em `375×812`.
+   - Valida em `/reports` (`375×812`) que a tabela mantém scroll contido em `[data-slot="table-container"][tabindex="0"]`.
+   - Comprova o isolamento RBAC nos cards mobile (`375×812`): `ADMIN` vê os controles `Editar` e `Inativar`, enquanto `OPERATOR` visualiza os cards sem ações de gerenciamento.
+3. **Teste 3 — `navegação por teclado, skip link, retorno de foco, erros ARIA, contagem com Enter e movimento reduzido`**:
+   - Aciona o skip link `"Pular para o conteúdo"` via `Tab` + `Enter` e comprova foco em `<main id="conteudo">`.
+   - Abre o diálogo `"Nova categoria"` via `Enter`, fecha com `Escape` e comprova restauração de foco no botão `"Nova categoria"`.
+   - Navega com `Tab` e `Shift+Tab` em `/products/new`, submete via `Enter` e comprova `aria-invalid="true"` e `aria-describedby` nos inputs e no `SelectTrigger` de categoria.
+   - Em `/inventories/:id`, foca o campo pelo nome acessível (`Quantidade contada para ${name} (${sku})`), submete valor inválido com `Enter` (verificando `aria-invalid="true"` e `aria-describedby` apontando para o alerta visível) e submete valor válido (`18.000`) com `Enter`, atualizando a divergência para `-2,000`.
+   - Emula `reducedMotion: 'reduce'` e comprova `animationDuration === '1e-05s'` (`0.01ms`) e reposicionamento instantâneo de scroll (`scrollTop === 0`).
+
+#### 4. Resultados reais da bateria de verificação local e métricas de performance
+
+| Verificação / Suíte                                 | Comando / Escopo                                                                                                                               | Resultado Obtido                                                                              |
+| :-------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------- |
+| **Backend Lint & Typecheck**                        | `npm --prefix backend run lint && npm --prefix backend run typecheck`                                                                          | **PASS** (`0` erros, `0` warnings)                                                            |
+| **Backend Testes Unitários & Arquiteturais**        | `npm --prefix backend run test`                                                                                                                | **PASS** (**22 arquivos**, **279 testes passando** em `7,80s`)                                |
+| **Backend Build de Produção**                       | `npm --prefix backend run build`                                                                                                               | **PASS** (`nest build` sem erros)                                                             |
+| **Frontend Lint & Typecheck**                       | `npm --prefix frontend run lint && npm --prefix frontend run typecheck`                                                                        | **PASS** (`0` erros, `0` warnings, incluindo `frontend/e2e/`)                                 |
+| **Frontend Testes Unitários & Componentes**         | `npm --prefix frontend run test`                                                                                                               | **PASS** (**40 arquivos**, **274 testes passando** em `24,53s`)                               |
+| **Frontend Build de Produção**                      | `npm --prefix frontend run build`                                                                                                              | **PASS** (`950ms`, `0` warnings, todos os chunks `< 500 kB`)                                  |
+| **Exclusão de `axe-core` do bundle**                | Busca em `frontend/dist/**/*` por `axe-core` / `AxeBuilder`                                                                                    | **PASS** (`0` ocorrências no bundle de produção)                                              |
+| **Pré-validação Chromium + `AxeBuilder` + Teclado** | 57 auditorias `AxeBuilder` (`1440×900`, `768×1024`, `375×812` + modais/erros) + fluxos de teclado/foco sobre `frontend/dist` com APIs mockadas | **PASS** (**57/57 auditorias com `0` violações** e todos os fluxos de teclado/foco aprovados) |
+| **Auditoria de Dependências (Produção)**            | `npm --prefix backend audit --omit=dev` e `npm --prefix frontend audit --omit=dev`                                                             | **PASS** (`0` vulnerabilidades)                                                               |
+| **Formatação (Prettier)**                           | `npm run format:check`                                                                                                                         | **PASS** (100% dos arquivos conformes)                                                        |
+
+- **Preservação das métricas de performance da Subetapa 7C.1**:
+  - Maior chunk sob demanda: `vendor-charts` com `368,32 kB` (`105,75 kB` gzip) — inalterado.
+  - Chunks iniciais (`index` `113,96 kB`, `vendor-react` `310,19 kB`, `vendor-query` `34,88 kB`, `button` `35,78 kB`): todos estritamente `< 500 kB` (`0` alertas do Vite).
+  - Otimização de N+1 em `InventoryDetailPage` e filtro direto `currentStock = 0` em `ProductsService` integralmente preservados e validados pelas suítes unitárias.
+
+#### 5. Limitações de validação e matriz de critérios de aceite do Marco 7C
+
+1. **Diferenciação entre pré-validação com APIs mockadas e E2E integrado com PostgreSQL real**:
+   - Como o ambiente Windows local não possui PostgreSQL ativo nem Docker, a pré-validação em Chromium headless das 57 auditorias `AxeBuilder` e interações de teclado foi executada sobre o build de produção (`frontend/dist`) com interceptação de rotas (`/api/v1/**` mockadas).
+   - A execução integrada da suíte `frontend/e2e/accessibility-responsiveness.spec.ts` (junto com `stock-cycle.spec.ts`, `inventory-approval.spec.ts` e os `462` testes de integração do backend) contra PostgreSQL 17 real ocorrerá no job `e2e` / `backend` do GitHub Actions após autorização de publicação.
+2. **Escopo da conformidade WCAG 2.2 AA**:
+   - A auditoria automatizada com `@axe-core/playwright` (`0` violações em 57 estados/viewports) somada aos testes funcionais de teclado, foco, contraste OKLCH e árvore de acessibilidade cobre os critérios programaticamente verificáveis da WCAG 2.2 AA, mas **não substitui** testes assistidos por humanos utilizando leitores de tela dedicados (NVDA, JAWS, VoiceOver) em fluxos reais completos.
+
+#### 6. Inventário de arquivos da Subetapa 7C.3 (12 arquivos)
+
+- **Arquivos modificados (11)**:
+  - `docs/19-plano-fase-7.md`
+  - `frontend/package.json`
+  - `frontend/package-lock.json`
+  - `frontend/e2e/helpers/api.ts`
+  - `frontend/src/app/layouts/AuthLayout.tsx`
+  - `frontend/src/components/ui/sheet.tsx`
+  - `frontend/src/components/ui/table.tsx`
+  - `frontend/src/features/auth/pages/LoginPage.tsx`
+  - `frontend/src/features/auth/pages/LoginPage.test.tsx`
+  - `frontend/src/features/categories/components/CategoryFormSheet.tsx`
+  - `frontend/src/features/categories/pages/CategoriesPage.test.tsx`
+- **Arquivo novo (1)**:
+  - `frontend/e2e/accessibility-responsiveness.spec.ts`
