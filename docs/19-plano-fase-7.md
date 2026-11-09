@@ -1986,8 +1986,9 @@ Para manter controle rigoroso de escopo e verificação incremental, a execuçã
   - Documentada a limitação de que a medição das 14 consultas via `EXPLAIN (ANALYZE, BUFFERS)` foi realizada em base pequena de desenvolvimento/teste (`46` produtos, `72` movimentações), não demonstrando desempenho sob carga volumosa (nenhum índice ou migration será criado no Marco 7C; eventuais benchmarks com dados sintéticos ficam restritos a ambiente isolado sem operações destrutivas).
 - **Status de execução do Marco 7C**:
   - **Planejamento técnico concluído e aprovado.**
-  - **Subetapa `7C.1` (Performance Frontend e Backend/N+1): concluída, auditada e com suítes unitárias, typecheck, lint e builds 100% aprovados.** Validação de integração/E2E delegada ao GitHub Actions devido à ausência de PostgreSQL no host local.
-  - **Subetapas `7C.2` e `7C.3`: pendentes de autorização.**
+  - **Subetapa `7C.1` (Performance Frontend e Backend/N+1): concluída, auditada e publicada no commit `1e6cb17` (GitHub Actions CI #14 100% verde, incluindo 462 testes de integração e 2 fluxos E2E com PostgreSQL real).**
+  - **Subetapa `7C.2` (`M7C-3` Acessibilidade WCAG 2.2 AA, `M7C-4` Responsividade e `M7C-5` Movimento Reduzido): concluída e verificada localmente (lint, typecheck, 272 testes no Vitest, build de produção, Prettier e 33 cenários multi-viewport em Chromium headless com APIs mockadas), pronta para publicação.**
+  - **Subetapa `7C.3` (Auditoria automatizada `@axe-core/playwright`, revisão manual de acessibilidade e E2E com banco real): pendente de autorização.**
 
 ---
 
@@ -2073,3 +2074,126 @@ Para manter controle rigoroso de escopo e verificação incremental, a execuçã
   - `frontend/src/components/shared/PageLoader.tsx`
   - `frontend/src/components/shared/PageLoader.test.tsx`
   - `frontend/src/features/inventories/components/InventoryProductCell.test.tsx`
+
+---
+
+### 19.18.12 Execução e resultados reais da Subetapa 7C.2 (2026-11-08)
+
+#### 1. Implementações realizadas na Subetapa 7C.2
+
+1. **`M7C-3` — Acessibilidade (WCAG 2.2 AA — Critérios 1.3.1, 1.4.3, 2.1.1, 2.4.1, 2.4.7, 3.3.1, 3.3.2 e 4.1.2)**:
+   - **Recalibração dos tokens semânticos OKLCH (`frontend/src/index.css`)**:
+     - `--sf-success`: ajustado de `oklch(55% 0.145 163)` para `oklch(50% 0.145 163)` (contraste `5,33:1` sobre `--sf-bg` e `4,63:1` sobre fundo translúcido `/10`).
+     - `--sf-warning`: ajustado de `oklch(68% 0.145 75)` para `oklch(52% 0.145 75)` (contraste `5,61:1` sobre `--sf-bg` e `4,89:1` sobre fundo translúcido `/10`).
+     - `--sf-danger`: ajustado de `oklch(56% 0.215 27)` para `oklch(53% 0.215 27)` (contraste `5,90:1` sobre `--sf-bg` e `4,92:1` sobre fundo translúcido `/10`).
+   - **Skip link funcional (`frontend/src/app/layouts/AppShell.tsx`)**:
+     - Adicionado link `"Pular para o conteúdo"` (`href="#conteudo"`, classes `sr-only focus:not-sr-only ...`) como primeiro elemento focável do `AppShell`, associado a `<main id="conteudo" tabIndex={-1}>`.
+   - **Nomes acessíveis (`aria-label`) nos 13 filtros `SelectTrigger` e no `ProductPicker`**:
+     - `DashboardPage.tsx` (`"Período do gráfico de movimentações"`), `ProductsPage.tsx` (`"Filtrar por categoria"`, `"Filtrar por nível de estoque"`, `"Filtrar por status"`), `CategoriesPage.tsx` (`"Filtrar por status"`), `SuppliersPage.tsx` (`"Filtrar por status"`), `MovementsPage.tsx` (`"Filtrar por tipo de movimentação"`, `"Filtrar por motivo"` e `ProductPicker` com `ariaLabel="Filtrar por produto"`), `InventoriesPage.tsx` (`"Filtrar por status do inventário"`), `ReportsPage.tsx` (`"Tipo de relatório"`), `UsersPage.tsx` (`"Filtrar por perfil"`, `"Filtrar por status"`) e `UserDetailPage.tsx` (`"Selecionar novo perfil"`).
+     - `ProductPicker.tsx`: adicionada prop opcional `ariaLabel?: string` com fallback `"Buscar produto"`.
+   - **Associação semântica (`id`, `aria-describedby`, `aria-invalid`) nos `SelectTrigger` dentro de `FormField`**:
+     - Propagado `{...field}` do render-prop de `FormField` diretamente ao `<SelectTrigger {...field}>` em `ProductForm.tsx` (`categoryId`, `supplierId`, `unit`), `MovementEntryForm.tsx` (`reason`) e `UserNewPage.tsx` (`role`).
+   - **Modais, menu mobile, cabeçalho e células de contagem de inventário**:
+     - `Sidebar.tsx`: adicionado `<SheetDescription className="sr-only">Menu de navegação principal</SheetDescription>` ao `Sheet` mobile.
+     - `sheet.tsx`: traduzido o rótulo do botão de fechamento de `"Close"` para `"Fechar"` e adicionado `aria-hidden="true"` ao ícone `<XIcon />`.
+     - `Header.tsx`: alterado `<span className="hidden sm:inline">{user.name}</span>` para `<span className="sr-only sm:not-sr-only sm:inline">{user.name}</span>`, preservando o nome acessível do gatilho do menu do usuário em telas `< 640px`.
+     - `InventoryCountCell.tsx` e `InventoryDetailPage.tsx`: adicionado `aria-label` descritivo (`Quantidade contada para ${item.productName} (${item.productSku})` com fallback para `item.id`), submissão por tecla `Enter` e associação `aria-invalid` / `aria-describedby` ao alerta de erro inline.
+
+2. **`M7C-4` — Responsividade (`375px`, `768px` e `1440px` — Critério 1.4.10 Reflow)**:
+   - **Visualização mobile em cards (`renderCard` no `DataTable`) com equivalência de dados, ações e permissões RBAC**:
+     - `ProductsPage.tsx`: enriquecido com categoria, ponto de pedido (`minStock`), custo unitário, estoque/unidade, badges de status/estoque, link para detalhe e ações `Editar` / `Inativar` / `Ativar` (protegidas por `canManage` e `ConfirmDialog`).
+     - `SuppliersPage.tsx`: enriquecido com CNPJ formatado, contato, telefone, e-mail (`break-all`), status, link para detalhe e ações `Editar` / `Inativar` / `Ativar` (`canManage` + `ConfirmDialog`).
+     - `CategoriesPage.tsx`: implementado `renderCard` com nome, descrição, ordem de exibição, badge de status e ações `Editar` / `Inativar` / `Ativar` (`canManage` + `ConfirmDialog`).
+     - `MovementsPage.tsx`: enriquecido com tipo (`Badge`), produto/SKU, motivo, quantidade com sinal, saldo (`previousStock -> newStock`), responsável e referência/notas.
+     - `InventoriesPage.tsx`: enriquecido com código/link, escopo, progresso (`countedItems / totalItems`), divergências (`Badge`), responsável, data de abertura e status.
+     - `UsersPage.tsx`: implementado `renderCard` com nome/link, e-mail (`break-all`), perfil (`Badge`), status (`Badge`), último acesso e data de criação.
+     - `AuditPage.tsx`: implementado `renderCard` com data/hora, ator (`break-all`), ação (`Badge`), entidade (`entityType` + `entityId`), IP e botão `Ver` que abre o `Sheet` de detalhes JSON (`oldValues` / `newValues`).
+     - `ProductDetailPage.tsx` (aba Histórico) e `SupplierDetailPage.tsx` (produtos vinculados): implementado `renderCard` mobile equivalente às tabelas desktop.
+   - **Tabelas operacionais/analíticas mantidas com scroll horizontal controlado (`overflow-x-auto`)**:
+     - `InventoryDetailPage.tsx` (tabela de contagem inline) e `ReportsPage.tsx` (6 relatórios analíticos) preservadas em formato tabular com `overflow-x-auto` interno ao container, sem vazamento no `documentElement` ou `<main>`.
+   - **Ajustes de filtros, cabeçalhos, formulários e grids para `375px`, `768px` e `1440px`**:
+     - `PageHeader.tsx`, `InventoryDetailPage.tsx` e `UserDetailPage.tsx`: `flex-wrap` nos containers de ações e `break-all` em e-mails longos.
+     - `MovementsPage.tsx` e `ReportsPage.tsx`: empilhamento vertical dos seletores de período (`flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-1`) e larguras responsivas (`w-full sm:w-*`).
+     - `InventoryNewPage.tsx`: `min-w-0` e `truncate` nos itens da lista de seleção de produtos.
+     - `DashboardPage.tsx`: `min-w-0` nos `<Card>` filhos do CSS Grid (`lg:col-span-3` e `lg:col-span-2`) para eliminar expansão horizontal (`min-width: auto`) em `375px`.
+
+3. **`M7C-5` — Movimento Reduzido (`prefers-reduced-motion: reduce` — Critério 2.3.3)**:
+   - `frontend/src/index.css`: regra global `@media (prefers-reduced-motion: reduce)` em `@layer base` aplicando `animation-duration: 0.01ms !important`, `animation-iteration-count: 1 !important`, `transition-duration: 0.01ms !important` e `scroll-behavior: auto !important`.
+   - `Sidebar.tsx` e `skeleton.tsx`: classes `motion-reduce:transition-none` e `motion-reduce:animate-none`, preservando todos os indicadores funcionais de carregamento (`Skeleton`, `PageLoader` e estados `isPending`).
+   - `AppShell.tsx`: verificação de `window.matchMedia('(prefers-reduced-motion: reduce)').matches` no efeito de `scrollTo` por mudança de rota, utilizando `behavior: prefersReducedMotion ? 'instant' : 'auto'`.
+
+#### 2. Métricas de contraste e responsividade verificadas na Subetapa 7C.2
+
+| Token / Verificação                               | Antes (`7C.1`)                                         | Depois (`7C.2`)                                          | Meta / Critério WCAG 2.2 AA              |
+| :------------------------------------------------ | :----------------------------------------------------- | :------------------------------------------------------- | :--------------------------------------- |
+| `--sf-success` sobre `--sf-bg` / sobre tint `/10` | `3,96:1` / `3,44:1` (`oklch(55% 0.145 163)`)           | **`5,33:1` / `4,63:1`** (`oklch(50% 0.145 163)`)         | `>= 4,5:1` (SC 1.4.3 — Aprovado)         |
+| `--sf-warning` sobre `--sf-bg` / sobre tint `/10` | `2,51:1` / `2,19:1` (`oklch(68% 0.145 75)`)            | **`5,61:1` / `4,89:1`** (`oklch(52% 0.145 75)`)          | `>= 4,5:1` (SC 1.4.3 — Aprovado)         |
+| `--sf-danger` sobre `--sf-bg` / sobre tint `/10`  | `4,23:1` / `3,53:1` (`oklch(56% 0.215 27)`)            | **`5,90:1` / `4,92:1`** (`oklch(53% 0.215 27)`)          | `>= 4,5:1` (SC 1.4.3 — Aprovado)         |
+| Overflow horizontal (`scrollWidth > innerWidth`)  | Ocorrência em `/dashboard` (`445px > 375px`) e filtros | **`0` ocorrências em 33 combinações** (`375/768/1440px`) | SC 1.4.10 Reflow (`375px` — Aprovado)    |
+| `animation-duration` sob `prefers-reduced-motion` | `0.15s`–`2s` (animações e pulsos ativos)               | **`0.00001s` (`0.01ms`)** + `scrollTo('instant')`        | SC 2.3.3 (Movimento reduzido — Aprovado) |
+
+#### 3. Resultados reais dos testes automatizados e verificações
+
+- **Frontend Lint**: `npm --prefix frontend run lint` (`eslint . --max-warnings=0`) — **0 erros, 0 warnings**.
+- **Frontend Typecheck**: `npm --prefix frontend run typecheck` (`tsc -b --noEmit`) — **0 erros**.
+- **Frontend Unitário & Componentes (Vitest)**: `npm --prefix frontend run test` — **40 arquivos de teste, 272 testes passando** (`17,65s`), incluindo:
+  - `AppShell.test.tsx` (novo, 6 testes): skip link `#conteudo`, `<main id="conteudo" tabIndex={-1}>`, `scrollTo` com `behavior: 'auto'` vs `behavior: 'instant'` sob `prefers-reduced-motion: reduce`, presença da media query em `index.css` e garantia de contraste WCAG 2.2 AA (`>= 4,5:1`) para `--sf-success`, `--sf-warning` e `--sf-danger`.
+  - `InventoryCountCell.test.tsx` (novo, 3 testes): `aria-label` com nome e SKU do produto, submissão com `Enter` e associação `aria-invalid`/`aria-describedby` em erro.
+  - Suítes de páginas atualizadas (`ProductsPage`, `CategoriesPage`, `SuppliersPage`, `MovementsPage`, `InventoriesPage`, `InventoryDetailPage`, `ProductNewPage`, `ProductDetailPage`, `SupplierDetailPage`, `UsersPage`, `AuditPage`) cobrindo `aria-label` de filtros, `aria-describedby` de formulários e paridade de dados/ações/RBAC nos cards mobile (`renderCard`).
+- **Build de Produção Frontend**: `npm --prefix frontend run build` (`vite build`) — concluído em **`981ms`**, **0 warnings**, todos os chunks `< 500 kB` (preservando integralmente o code-splitting da `7C.1`).
+- **Formatação (Prettier)**: `npm run format:check` — **100% dos arquivos em conformidade**.
+- **Verificação Multi-Viewport em Chromium Headless (`33/33` cenários)**:
+  - Executada contra o build de produção (`frontend/dist`) com respostas de API mockadas (`/api/v1/**`) em 11 rotas (`/login`, `/dashboard`, `/products`, `/categories`, `/suppliers`, `/movements`, `/inventories`, `/inventories/inv-1`, `/reports`, `/users`, `/audit`) × 3 viewports (`375x812`, `768x1024`, `1440x900`) = **33 combinações aprovadas** com `0` overflows horizontais, alternância correta entre `ul.sm:hidden` (`375px`) e `div.sm:block` (`768px`/`1440px`), tabelas com `overflow-x-auto` contido em `/inventories/inv-1` e `/reports`, e `animationDuration: 1e-05s` sob `reducedMotion: 'reduce'`.
+
+#### 4. Limitações conhecidas e escopo pendente para a Subetapa 7C.3
+
+- **Natureza da verificação multi-viewport com APIs mockadas**:
+  - Os 33 cenários em Chromium headless utilizaram interceptação de rotas (`page.route`) com payloads mockados e **não substituem** os testes E2E do Playwright contra banco PostgreSQL real.
+- **Conformidade WCAG 2.2 AA completa**:
+  - As correções estruturais, de contraste OKLCH, de rótulos ARIA e de movimento reduzido foram implementadas e testadas no nível de componentes, mas **não se declara conformidade WCAG completa** antes da auditoria automatizada com `@axe-core/playwright` em páginas renderizadas reais e da revisão manual complementar de navegação por teclado/foco previstas para a **Subetapa `7C.3`**.
+
+#### 5. Inventário dos 41 arquivos da Subetapa 7C.2
+
+- **Arquivos modificados (39)**:
+  - `docs/19-plano-fase-7.md`
+  - `frontend/src/app/layouts/AppShell.tsx`
+  - `frontend/src/components/layout/Header.tsx`
+  - `frontend/src/components/layout/Sidebar.tsx`
+  - `frontend/src/components/shared/PageHeader.tsx`
+  - `frontend/src/components/ui/sheet.tsx`
+  - `frontend/src/components/ui/skeleton.tsx`
+  - `frontend/src/features/audit/pages/AuditPage.test.tsx`
+  - `frontend/src/features/audit/pages/AuditPage.tsx`
+  - `frontend/src/features/categories/pages/CategoriesPage.test.tsx`
+  - `frontend/src/features/categories/pages/CategoriesPage.tsx`
+  - `frontend/src/features/dashboard/pages/DashboardPage.tsx`
+  - `frontend/src/features/inventories/components/InventoryCountCell.tsx`
+  - `frontend/src/features/inventories/pages/InventoriesPage.test.tsx`
+  - `frontend/src/features/inventories/pages/InventoriesPage.tsx`
+  - `frontend/src/features/inventories/pages/InventoryDetailPage.test.tsx`
+  - `frontend/src/features/inventories/pages/InventoryDetailPage.tsx`
+  - `frontend/src/features/inventories/pages/InventoryNewPage.tsx`
+  - `frontend/src/features/products/components/ProductForm.tsx`
+  - `frontend/src/features/products/components/ProductPicker.tsx`
+  - `frontend/src/features/products/pages/ProductDetailPage.test.tsx`
+  - `frontend/src/features/products/pages/ProductDetailPage.tsx`
+  - `frontend/src/features/products/pages/ProductNewPage.test.tsx`
+  - `frontend/src/features/products/pages/ProductsPage.test.tsx`
+  - `frontend/src/features/products/pages/ProductsPage.tsx`
+  - `frontend/src/features/reports/pages/ReportsPage.tsx`
+  - `frontend/src/features/stock-movements/components/MovementEntryForm.tsx`
+  - `frontend/src/features/stock-movements/pages/MovementsPage.test.tsx`
+  - `frontend/src/features/stock-movements/pages/MovementsPage.tsx`
+  - `frontend/src/features/suppliers/pages/SupplierDetailPage.test.tsx`
+  - `frontend/src/features/suppliers/pages/SupplierDetailPage.tsx`
+  - `frontend/src/features/suppliers/pages/SuppliersPage.test.tsx`
+  - `frontend/src/features/suppliers/pages/SuppliersPage.tsx`
+  - `frontend/src/features/users/pages/UserDetailPage.tsx`
+  - `frontend/src/features/users/pages/UserNewPage.tsx`
+  - `frontend/src/features/users/pages/UsersPage.test.tsx`
+  - `frontend/src/features/users/pages/UsersPage.tsx`
+  - `frontend/src/index.css`
+  - `frontend/src/test/setup.ts`
+- **Arquivos novos (2)**:
+  - `frontend/src/app/layouts/AppShell.test.tsx`
+  - `frontend/src/features/inventories/components/InventoryCountCell.test.tsx`
