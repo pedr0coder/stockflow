@@ -244,6 +244,24 @@ export async function apiCreateEntry(
   }
 }
 
+export async function apiOpenInventory(
+  request: APIRequestContext,
+  session: ApiSession,
+  productIds: string[],
+  note?: string,
+): Promise<{ id: string; code: string }> {
+  const response = await request.post('/api/v1/inventories', {
+    headers: authHeader(session),
+    data: { productIds, ...(note !== undefined ? { note } : {}) },
+  });
+
+  if (!response.ok()) {
+    throw new Error(`fixture: falha ao abrir inventário: ${String(response.status())}`);
+  }
+
+  return (await response.json()) as { id: string; code: string };
+}
+
 /** Sufixo curto e único, para SKU/nome não colidirem entre execuções. */
 export function uniqueSuffix(): string {
   return Date.now().toString(36).toUpperCase();
