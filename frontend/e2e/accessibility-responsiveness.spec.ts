@@ -23,6 +23,45 @@ async function waitForPageReady(page: Page): Promise<void> {
   await expect(page.locator('[data-slot="skeleton"]')).toHaveCount(0);
 }
 
+/**
+ * Navega entre rotas autenticadas utilizando exclusivamente os links e
+ * controles reais da interface (`<NavLink>` da sidebar/drawer mobile e `<Link>`
+ * dos cabeçalhos/listagens do React Router), preservando o estado SPA em
+ * memória sem recarregar o documento (`page.goto`) nem disparar chamadas
+ * artificiais a `POST /api/v1/auth/refresh`.
+ */
+async function navigateViaUi(page: Page, targetPath: string): Promise<void> {
+  const currentPath = new URL(page.url()).pathname;
+  if (currentPath === targetPath) {
+    return;
+  }
+
+  const escapedTarget = targetPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const visibleLink = page.locator(`a[href="${targetPath}"]:visible`).first();
+  const mobileMenuTrigger = page.getByRole('button', { name: 'Abrir navegação' });
+
+  if ((await mobileMenuTrigger.isVisible()) && (await visibleLink.count()) === 0) {
+    await mobileMenuTrigger.click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+    const drawerLink = dialog.locator(`a[href="${targetPath}"]`).first();
+    await expect(drawerLink).toBeVisible();
+    await drawerLink.click();
+    await expect(dialog).toBeHidden();
+  } else {
+    await visibleLink.click();
+  }
+
+  await expect(page).toHaveURL(new RegExp(`${escapedTarget}$`));
+  await waitForPageReady(page);
+}
+
+async function uiLogout(page: Page, userNamePattern: RegExp): Promise<void> {
+  await page.locator('header').getByRole('button', { name: userNamePattern }).click();
+  await page.getByRole('menuitem', { name: 'Sair' }).click();
+  await expect(page).toHaveURL(/\/login$/);
+}
+
 async function assertNoAxeViolations(page: Page, contextLabel: string): Promise<void> {
   const results = await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
   const summary = results.violations.map((v) => ({
@@ -82,12 +121,14 @@ test.describe('Marco 7C — Acessibilidade WCAG 2.2 AA, Responsividade e Teclado
     page,
     request,
   }) => {
+    test.setTimeout(60_000);
+
     const suffix = uniqueSuffix();
     const manager = await apiLogin(request, 'gerente@stockflow.local');
     const category = await apiCreateCategory(request, manager, `Cat A11y ${suffix}`);
     const product = await apiCreateProduct(request, manager, {
-      sku: `A11Y-${suffix}`,
-      name: `Produto A11y ${suffix}`,
+      sku: `00A11Y-${suffix}`,
+      name: `00 Produto A11y ${suffix}`,
       categoryId: category.id,
     });
     await apiCreateEntry(request, manager, product.id, '25.000');
@@ -105,51 +146,75 @@ test.describe('Marco 7C — Acessibilidade WCAG 2.2 AA, Responsividade e Teclado
     await expect(page.getByRole('alert').first()).toBeVisible();
     await assertNoAxeViolations(page, '/login (com erros de validação)');
 
-    // ── 1.2 Login real como ADMIN para acessar todas as rotas do sistema ──────
+    // ── 1.2 Login real como ADMIN e navegação SPA pelos links reais da interface ──
     await uiLogin(page, 'admin@stockflow.local');
     await waitForPageReady(page);
 
-    const authenticatedRoutes = [
-      '/dashboard',
-      '/products',
-      '/products/new',
-      `/products/${product.id}`,
-      '/categories',
-      '/suppliers',
-      '/movements',
-      '/movements/new',
-      '/inventories',
-      '/inventories/new',
-      '/reports',
-      '/users',
-      '/users/new',
-      '/audit',
-    ];
+    const auditCurrentRoute = async (routeLabel: string): Promise<void> => {
+      await test.step(`Auditar ${routeLabel} (1440x900)`, async () => {
+        await waitForPageReady(page);
+        await assertNoAxeViolations(page, `${routeLabel} (1440x900)`);
+        await assertNoHorizontalOverflow(page, `${routeLabel} (1440x900)`);
+      });
+    };
 
-    for (const route of authenticatedRoutes) {
-      await page.goto(route);
-      await waitForPageReady(page);
-      await assertNoAxeViolations(page, `${route} (1440x900)`);
-      await assertNoHorizontalOverflow(page, `${route} (1440x900)`);
-    }
+    // /dashboard (página inicial pós-login)
+    await auditCurrentRoute('/dashboard');
 
-    // ── 1.3 Estados interativos: erros de formulário, modal e sheet lateral ───
-    await page.goto('/products/new');
+    // /products -> /products/:id -> /products -> /products/new (+ erros de validação)
+    await navigateViaUi(page, '/products');
+    await auditCurrentRoute('/products');
+
+    await navigateViaUi(page, `/products/${product.id}`);
+    await auditCurrentRoute(`/products/${product.id}`);
+
+    await navigateViaUi(page, '/products');
     await waitForPageReady(page);
+    await navigateViaUi(page, '/products/new');
+    await auditCurrentRoute('/products/new');
+
     await page.getByRole('button', { name: 'Cadastrar' }).click();
     await expect(page.getByRole('alert').first()).toBeVisible();
     await assertNoAxeViolations(page, '/products/new (com erros de validação)');
 
-    await page.goto('/categories');
-    await waitForPageReady(page);
+    // /categories (+ modal aberto)
+    await navigateViaUi(page, '/categories');
+    await auditCurrentRoute('/categories');
     await page.getByRole('button', { name: 'Nova categoria' }).click();
     await expect(page.getByRole('dialog')).toBeVisible();
     await assertNoAxeViolations(page, '/categories (modal aberto)');
     await page.keyboard.press('Escape');
     await expect(page.getByRole('dialog')).toBeHidden();
 
-    await page.goto('/audit');
-    await waitForPageReady(page);
+    // /suppliers
+    await navigateViaUi(page, '/suppliers');
+    await auditCurrentRoute('/suppliers');
+
+    // /movements -> /movements/new
+    await navigateViaUi(page, '/movements');
+    await auditCurrentRoute('/movements');
+    await navigateViaUi(page, '/movements/new');
+    await auditCurrentRoute('/movements/new');
+
+    // /inventories -> /inventories/new
+    await navigateViaUi(page, '/inventories');
+    await auditCurrentRoute('/inventories');
+    await navigateViaUi(page, '/inventories/new');
+    await auditCurrentRoute('/inventories/new');
+
+    // /reports
+    await navigateViaUi(page, '/reports');
+    await auditCurrentRoute('/reports');
+
+    // /users -> /users/new
+    await navigateViaUi(page, '/users');
+    await auditCurrentRoute('/users');
+    await navigateViaUi(page, '/users/new');
+    await auditCurrentRoute('/users/new');
+
+    // /audit (+ sheet de detalhes aberto)
+    await navigateViaUi(page, '/audit');
+    await auditCurrentRoute('/audit');
     await page.getByRole('button', { name: /Ver/i }).first().click();
     await expect(page.getByRole('dialog')).toBeVisible();
     await assertNoAxeViolations(page, '/audit (sheet de detalhes aberto)');
@@ -161,12 +226,14 @@ test.describe('Marco 7C — Acessibilidade WCAG 2.2 AA, Responsividade e Teclado
     page,
     request,
   }) => {
+    test.setTimeout(60_000);
+
     const suffix = uniqueSuffix();
     const manager = await apiLogin(request, 'gerente@stockflow.local');
     const category = await apiCreateCategory(request, manager, `Cat Resp ${suffix}`);
     const product = await apiCreateProduct(request, manager, {
-      sku: `RESP-${suffix}`,
-      name: `Produto Resp ${suffix}`,
+      sku: `00RESP-${suffix}`,
+      name: `00 Produto Resp ${suffix}`,
       categoryId: category.id,
     });
     await apiCreateEntry(request, manager, product.id, '10.000');
@@ -186,8 +253,6 @@ test.describe('Marco 7C — Acessibilidade WCAG 2.2 AA, Responsividade e Teclado
 
     // ── 2.1 Viewport 375x812 (Mobile): cards ativos, tabelas ocultas da árvore A11y e 0 overflow ──
     await page.setViewportSize({ width: 375, height: 812 });
-
-    await page.goto('/dashboard');
     await waitForPageReady(page);
     await assertNoHorizontalOverflow(page, '/dashboard (375x812)');
     await assertNoAxeViolations(page, '/dashboard (375x812)');
@@ -202,26 +267,30 @@ test.describe('Marco 7C — Acessibilidade WCAG 2.2 AA, Responsividade e Teclado
     await expect(page.getByRole('dialog')).toBeHidden();
 
     for (const route of cardListingRoutes) {
-      await page.goto(route);
-      await waitForPageReady(page);
-      await assertNoHorizontalOverflow(page, `${route} (375x812)`);
-      await assertNoAxeViolations(page, `${route} (375x812)`);
+      await test.step(`Auditar ${route} (375x812)`, async () => {
+        await navigateViaUi(page, route);
+        await waitForPageReady(page);
+        await assertNoHorizontalOverflow(page, `${route} (375x812)`);
+        await assertNoAxeViolations(page, `${route} (375x812)`);
 
-      // A tabela desktop tem `display: none` (`hidden sm:block`), portanto não deve
-      // aparecer na árvore de acessibilidade em 375px; a lista mobile `ul.sm:hidden` deve estar visível.
-      await expect(page.getByRole('table')).toHaveCount(0);
-      await expect(page.locator('main ul.sm\\:hidden').first()).toBeVisible();
+        // A tabela desktop tem `display: none` (`hidden sm:block`), portanto não deve
+        // aparecer na árvore de acessibilidade em 375px; a lista mobile `ul.sm:hidden` deve estar visível.
+        await expect(page.getByRole('table')).toHaveCount(0);
+        const mobileCardList = page.locator('main ul.sm\\:hidden').first();
+        await expect(mobileCardList).toBeVisible();
+
+        if (route === '/products') {
+          // Em /products (375x812), o card mobile para ADMIN exibe dados e botões Editar/Inativar
+          await expect(mobileCardList.getByRole('link', { name: /Editar/i }).first()).toBeVisible();
+          await expect(
+            mobileCardList.getByRole('button', { name: /Inativar/i }).first(),
+          ).toBeVisible();
+        }
+      });
     }
 
-    // Em /products (375x812), o card mobile para ADMIN exibe dados e botões Editar/Inativar
-    await page.goto('/products');
-    await waitForPageReady(page);
-    const mobileCardList = page.locator('main ul.sm\\:hidden').first();
-    await expect(mobileCardList.getByRole('link', { name: /Editar/i }).first()).toBeVisible();
-    await expect(mobileCardList.getByRole('button', { name: /Inativar/i }).first()).toBeVisible();
-
     // Em /reports (375x812), a tabela complexa mantém scroll horizontal contido e container focável
-    await page.goto('/reports');
+    await navigateViaUi(page, '/reports');
     await waitForPageReady(page);
     await assertNoHorizontalOverflow(page, '/reports (375x812)');
     await assertNoAxeViolations(page, '/reports (375x812)');
@@ -238,23 +307,25 @@ test.describe('Marco 7C — Acessibilidade WCAG 2.2 AA, Responsividade e Teclado
     ]) {
       await page.setViewportSize({ width: vp.width, height: vp.height });
       for (const route of ['/dashboard', '/products', '/movements', '/inventories', '/reports']) {
-        await page.goto(route);
-        await waitForPageReady(page);
-        await assertNoHorizontalOverflow(page, `${route} (${vp.label})`);
-        await assertNoAxeViolations(page, `${route} (${vp.label})`);
-      }
+        await test.step(`Auditar ${route} (${vp.label})`, async () => {
+          await navigateViaUi(page, route);
+          await waitForPageReady(page);
+          await assertNoHorizontalOverflow(page, `${route} (${vp.label})`);
+          await assertNoAxeViolations(page, `${route} (${vp.label})`);
 
-      await page.goto('/products');
-      await waitForPageReady(page);
-      await expect(page.getByRole('table')).toHaveCount(1);
-      await expect(page.locator('main ul.sm\\:hidden')).toBeHidden();
+          if (route === '/products') {
+            await expect(page.getByRole('table')).toHaveCount(1);
+            await expect(page.locator('main ul.sm\\:hidden')).toBeHidden();
+          }
+        });
+      }
     }
 
     // ── 2.3 Preservação de RBAC nos cards mobile (375x812) para perfil OPERATOR ──
+    await uiLogout(page, /Ana Administradora/i);
     await page.setViewportSize({ width: 375, height: 812 });
-    await page.goto('/login');
     await uiLogin(page, 'operador@stockflow.local');
-    await page.goto('/products');
+    await navigateViaUi(page, '/products');
     await waitForPageReady(page);
     const operatorCards = page.locator('main ul.sm\\:hidden').first();
     await expect(operatorCards).toBeVisible();
@@ -270,8 +341,8 @@ test.describe('Marco 7C — Acessibilidade WCAG 2.2 AA, Responsividade e Teclado
     const manager = await apiLogin(request, 'gerente@stockflow.local');
     const category = await apiCreateCategory(request, manager, `Cat Key ${suffix}`);
     const product = await apiCreateProduct(request, manager, {
-      sku: `KEY-${suffix}`,
-      name: `Produto Teclado ${suffix}`,
+      sku: `00KEY-${suffix}`,
+      name: `00 Produto Teclado ${suffix}`,
       categoryId: category.id,
     });
     await apiCreateEntry(request, manager, product.id, '20.000');
@@ -295,7 +366,7 @@ test.describe('Marco 7C — Acessibilidade WCAG 2.2 AA, Responsividade e Teclado
     await expect(page.locator('main#conteudo')).toBeFocused();
 
     // ── 3.2 Abertura de modal por teclado, Escape e retorno de foco ao gatilho ──
-    await page.goto('/categories');
+    await navigateViaUi(page, '/categories');
     await waitForPageReady(page);
     const newCategoryButton = page.getByRole('button', { name: 'Nova categoria' });
     await newCategoryButton.focus();
@@ -307,7 +378,9 @@ test.describe('Marco 7C — Acessibilidade WCAG 2.2 AA, Responsividade e Teclado
     await expect(newCategoryButton).toBeFocused();
 
     // ── 3.3 Validação de formulário por teclado e atributos ARIA (aria-invalid / aria-describedby) ──
-    await page.goto('/products/new');
+    await navigateViaUi(page, '/products');
+    await waitForPageReady(page);
+    await navigateViaUi(page, '/products/new');
     await waitForPageReady(page);
     const skuInput = page.getByLabel(/^SKU/i);
     await skuInput.focus();
@@ -331,7 +404,9 @@ test.describe('Marco 7C — Acessibilidade WCAG 2.2 AA, Responsividade e Teclado
     expect(catDescribedBy).toBeTruthy();
 
     // ── 3.4 Contagem de inventário por teclado (Enter com erro e Enter válido) ──
-    await page.goto(`/inventories/${inventory.id}`);
+    await navigateViaUi(page, '/inventories');
+    await waitForPageReady(page);
+    await navigateViaUi(page, `/inventories/${inventory.id}`);
     await waitForPageReady(page);
     await assertNoAxeViolations(page, `/inventories/${inventory.id} (1440x900)`);
 
@@ -363,7 +438,7 @@ test.describe('Marco 7C — Acessibilidade WCAG 2.2 AA, Responsividade e Teclado
       );
     expect(reducedDuration).toBe('1e-05s');
 
-    await page.goto('/products');
+    await navigateViaUi(page, '/products');
     await waitForPageReady(page);
     const mainScrollTop = await page
       .locator('main#conteudo')

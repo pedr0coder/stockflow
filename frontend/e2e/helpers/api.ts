@@ -114,7 +114,9 @@ export async function uiLogin(page: Page, email: string): Promise<void> {
   const passwordInput = page.getByLabel(/^Senha/);
 
   try {
-    await page.goto('/login');
+    if (!page.url().endsWith('/login')) {
+      await page.goto('/login');
+    }
     await page.getByLabel('E-mail').fill(email);
     await passwordInput.fill(seedPasswordFor(email));
     await page.getByRole('button', { name: 'Entrar' }).click();
