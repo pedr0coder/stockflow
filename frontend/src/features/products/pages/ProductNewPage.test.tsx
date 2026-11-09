@@ -153,4 +153,24 @@ describe('ProductNewPage', () => {
       unit: 'UN',
     });
   });
+
+  it('associa mensagem de erro via aria-describedby e aria-invalid ao SelectTrigger de categoria', async () => {
+    mockLookups();
+    const user = userEvent.setup();
+
+    renderWithProviders(<ProductNewPage />);
+    await screen.findByText('Ferramentas');
+
+    const categoryTrigger = screen.getByRole('combobox', { name: /categoria/i });
+    expect(categoryTrigger).toHaveAttribute('aria-invalid', 'false');
+    expect(categoryTrigger).not.toHaveAttribute('aria-describedby');
+
+    await user.type(screen.getByLabelText(/^sku/i), 'TST-0001');
+    await user.type(screen.getByLabelText(/^nome/i), 'Produto sem categoria');
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+
+    const errorAlert = await screen.findByRole('alert');
+    expect(categoryTrigger).toHaveAttribute('aria-invalid', 'true');
+    expect(categoryTrigger).toHaveAttribute('aria-describedby', errorAlert.id);
+  });
 });

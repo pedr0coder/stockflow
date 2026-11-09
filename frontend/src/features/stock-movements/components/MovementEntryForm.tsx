@@ -139,7 +139,7 @@ export function MovementEntryForm({ type }: MovementEntryFormProps): ReactNode {
                   value={controllerField.value ?? ''}
                   onValueChange={controllerField.onChange}
                 >
-                  <SelectTrigger id={field.id} className="w-full">
+                  <SelectTrigger {...field} className="w-full">
                     <SelectValue placeholder="Selecione o motivo" />
                   </SelectTrigger>
                   <SelectContent>

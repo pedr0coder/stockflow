@@ -65,7 +65,7 @@ export function Header({ collapsed, onToggleCollapse, onOpenMobileNav }: HeaderP
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="sm" className="gap-2">
               <UserRound aria-hidden="true" className="size-4" />
-              <span className="hidden sm:inline">{user.name}</span>
+              <span className="sr-only sm:not-sr-only sm:inline">{user.name}</span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">

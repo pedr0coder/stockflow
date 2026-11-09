@@ -9,6 +9,7 @@ export interface ProductPickerProps {
   value: Product | null;
   onChange: (product: Product | null) => void;
   id?: string;
+  'aria-label'?: string | undefined;
   'aria-describedby'?: string | undefined;
   'aria-invalid'?: boolean;
   disabled?: boolean;
@@ -146,6 +147,9 @@ export function ProductPicker({
         aria-expanded={isOpen}
         aria-controls={listboxId}
         aria-autocomplete="list"
+        {...(id === undefined && aria['aria-label'] === undefined
+          ? { 'aria-label': 'Buscar produto' }
+          : {})}
         {...(highlightedIndex >= 0 ? { 'aria-activedescendant': optionId(highlightedIndex) } : {})}
         {...aria}
       />

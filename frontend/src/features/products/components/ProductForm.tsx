@@ -104,11 +104,7 @@ export function ProductForm({
               control={control}
               render={({ field: controllerField }) => (
                 <Select value={controllerField.value} onValueChange={controllerField.onChange}>
-                  <SelectTrigger
-                    id={field.id}
-                    aria-invalid={field['aria-invalid']}
-                    className="w-full"
-                  >
+                  <SelectTrigger {...field} className="w-full">
                     <SelectValue placeholder="Selecione a categoria" />
                   </SelectTrigger>
                   <SelectContent>
@@ -140,7 +136,7 @@ export function ProductForm({
                     controllerField.onChange(value === 'none' ? '' : value);
                   }}
                 >
-                  <SelectTrigger id={field.id} className="w-full">
+                  <SelectTrigger {...field} className="w-full">
                     <SelectValue placeholder="Sem fornecedor" />
                   </SelectTrigger>
                   <SelectContent>
@@ -166,7 +162,7 @@ export function ProductForm({
               control={control}
               render={({ field: controllerField }) => (
                 <Select value={controllerField.value} onValueChange={controllerField.onChange}>
-                  <SelectTrigger id={field.id} className="w-full">
+                  <SelectTrigger {...field} className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

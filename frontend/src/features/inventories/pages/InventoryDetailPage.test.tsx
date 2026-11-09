@@ -161,7 +161,10 @@ describe('InventoryDetailPage', () => {
     renderPage();
 
     await screen.findByText('Chave de fenda');
-    await user.type(screen.getByLabelText('Quantidade contada para o item item1'), '8.000');
+    await user.type(
+      screen.getByLabelText('Quantidade contada para Chave de fenda (FER-0001)'),
+      '8.000',
+    );
     await user.click(screen.getByRole('button', { name: 'Salvar' }));
 
     // A tela é atualizada por refetch do detalhe (que traz nome/SKU), não pela

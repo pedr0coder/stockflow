@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,7 +29,15 @@ export function InventoryCountCell({
 }: InventoryCountCellProps): ReactNode {
   const [value, setValue] = useState(item.countedQty ?? '');
   const [fieldError, setFieldError] = useState<string | null>(null);
+  const errorId = useId();
   const mutation = useCountItemMutation(inventoryId);
+
+  const labelTarget =
+    item.productName !== undefined && item.productName.length > 0
+      ? item.productSku !== undefined && item.productSku.length > 0
+        ? `${item.productName} (${item.productSku})`
+        : item.productName
+      : `o item ${item.id}`;
 
   async function save(): Promise<void> {
     const parsed = countSchema.safeParse({ countedQty: value });
@@ -69,10 +77,17 @@ export function InventoryCountCell({
           onChange={(event) => {
             setValue(event.target.value);
           }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !mutation.isPending && value.length > 0) {
+              event.preventDefault();
+              void save();
+            }
+          }}
           placeholder="0.000"
           className="h-8 w-24 font-mono"
-          aria-label={`Quantidade contada para o item ${item.id}`}
+          aria-label={`Quantidade contada para ${labelTarget}`}
           aria-invalid={fieldError !== null}
+          {...(fieldError !== null ? { 'aria-describedby': errorId } : {})}
         />
         <Button
           type="button"
@@ -85,7 +100,7 @@ export function InventoryCountCell({
         </Button>
       </div>
       {fieldError !== null ? (
-        <span role="alert" className="text-xs text-(--color-danger)">
+        <span id={errorId} role="alert" className="text-xs text-(--color-danger)">
           {fieldError}
         </span>
       ) : null}

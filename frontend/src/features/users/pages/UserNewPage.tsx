@@ -91,7 +91,7 @@ export function UserNewPage(): ReactNode {
                   control={control}
                   render={({ field: controllerField }) => (
                     <Select value={controllerField.value} onValueChange={controllerField.onChange}>
-                      <SelectTrigger id={field.id} className="w-full">
+                      <SelectTrigger {...field} className="w-full">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
