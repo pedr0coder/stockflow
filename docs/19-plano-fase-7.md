@@ -2244,6 +2244,22 @@ Na execução do GitHub Actions **CI #17** (commit `e233e358f21dc52895023b5dba6e
    - **Causa raiz (Teste / Reuso de Sessão de Fixture vs. `LoginThrottlerGuard`)**: `AuthController.login` aplica `@Throttle({ default: { limit: 5, ttl: 15 * 60 * 1000 } })` por IP + e-mail. A execução sequencial dos 5 testes E2E no mesmo worker realizava 7 logins para `gerente@stockflow.local` em menos de 1 minuto (3× `apiLogin` + 1× `uiLogin` em `accessibility-responsiveness.spec.ts`, 1× `apiLogin` + 1× `uiLogin` em `inventory-approval.spec.ts` e 1× `apiLogin` em `stock-cycle.spec.ts`), atingindo `429` a partir da 6ª chamada.
    - **Correção**: sem afrouxar o `LoginThrottlerGuard` do backend, `apiLogin(request, email)` em `frontend/e2e/helpers/api.ts` passou a reutilizar em memória (`apiSessionCache`) o `accessToken` de fixture por e-mail durante o ciclo de vida do worker (já que `JWT_ACCESS_TTL=15m` e toda a suíte roda em `< 1 min`), reduzindo o total de chamadas a `POST /api/v1/auth/login` para `gerente@stockflow.local` em toda a suíte de 7 para **3** (`1` `apiLogin` + `2` `uiLogin` reais de interface).
 
+#### 2.2. Diagnóstico do GitHub Actions CI #18 (`541d318`) e correções aplicadas
+
+Na execução do GitHub Actions **CI #18** (commit `541d318699068f31b915e156a4af822aeef58b05`, Run ID `42565837194`), as correções do CI #17 eliminaram integralmente a violação `color-contrast` em `/login` e todos os erros `429` em `POST /api/v1/auth/login` (`inventory-approval.spec.ts` e o `Teste 3` de `accessibility-responsiveness.spec.ts` passaram verdes). A inspeção dos logs e dos artefatos Playwright (`id=13651426893`, `error-context.md` e traces de rede `2-trace.network`) revelou as **3 causas raízes** dos 3 casos restantes:
+
+1. **Bug de contrato no Backend em `QueryInventoriesDto` (`GET /api/v1/inventories?page=1&sort=startedAt&order=desc -> 400 VALIDATION_ERROR`)**:
+   - **Evidência no trace do CI #18**: `{"statusCode":400,"code":"VALIDATION_ERROR","details":{"fields":{"sort":["property sort should not exist"]}}}`.
+   - **Causa raiz (Código Backend)**: `InventoriesPage.tsx` envia `sort=startedAt`, e `backend/src/inventories/dto/query-inventories.dto.ts` já definia `export const INVENTORY_SORT_COLUMNS = ['startedAt'] as const;` na linha 6, mas omitia a propriedade `sort?: InventorySortColumn` na classe `QueryInventoriesDto`. Com `ValidationPipe({ whitelist: true, forbidNonWhitelisted: true })`, a requisição retornava `400`, renderizando `<ErrorState>` em vez do `DataTable` (`ul.sm:hidden`).
+   - **Correção**: adicionada a propriedade `sort?: InventorySortColumn` validada por `@IsOptional() @IsString() @IsIn(INVENTORY_SORT_COLUMNS)` em `QueryInventoriesDto` e integrado `resolveSortColumn(query.sort, INVENTORY_SORT_COLUMNS, 'startedAt')` em `InventoriesService.findAll`, acompanhado de testes unitários em `pagination.spec.ts` e de integração (caso positivo `sort=startedAt&order=desc|asc` e negativo `sort=code -> 400`) em `backend/test/inventories.int-spec.ts`.
+2. **Exaustão do `RefreshThrottlerGuard` (`POST /api/v1/auth/refresh -> 429 RATE_LIMIT_EXCEEDED`) por uso de `page.goto()` em laços**:
+   - **Evidência no trace do CI #18 (`stock-cycle.spec.ts`)**: `{"path":"/api/v1/auth/refresh","statusCode":429,"code":"RATE_LIMIT_EXCEEDED","message":"Muitas tentativas. Aguarde alguns minutos."}`.
+   - **Causa raiz (Estratégia de Navegação E2E)**: como o `accessToken` vive exclusivamente em memória (`AuthProvider`), cada chamada a `await page.goto(route)` força um reload completo do navegador e dispara `POST /api/v1/auth/refresh` no `boot()`. Os ~47 `page.goto()` em `accessibility-responsiveness.spec.ts` somados aos demais specs ultrapassaram o limite de `30 / 15 min` por IP do `RefreshThrottlerGuard` exatamente na transição de `stock-cycle.spec.ts`, redirecionando para `/login`.
+   - **Correção**: sem alterar `RefreshThrottlerGuard` nem `LoginThrottlerGuard`, `accessibility-responsiveness.spec.ts` passou a navegar entre rotas autenticadas via helper `navigateViaUi(page, targetPath)` clicando exclusivamente nos links e controles reais da interface (`<NavLink>` da sidebar/drawer mobile e `<Link>` de cabeçalhos/listagens do React Router) e `uiLogout` pelo menu do usuário no `Header`. O total de chamadas a `POST /api/v1/auth/refresh` em `accessibility-responsiveness.spec.ts` caiu de **47** para **3** (apenas 1 no boot inicial de cada teste; **15** em toda a suíte de 5 testes E2E, 50% abaixo do limite de 30).
+3. **Timeout padrão de `30000ms` no Teste 1 (`Test timeout of 30000ms exceeded` em `31,7s`)**:
+   - **Causa raiz**: a combinação de 17 análises `AxeBuilder.analyze()` com recarregamentos completos de página a cada rota levou `31,7s` no runner do GitHub Actions.
+   - **Correção**: além da eliminação dos reloads via `navigateViaUi` e da remoção de visitas duplicadas às mesmas rotas no Teste 1, foi configurado `test.setTimeout(60_000)` especificamente nos Testes 1 e 2 (mantendo o timeout global de `30s` inalterado para o restante da suíte) e estruturados passos `test.step(...)` por rota.
+
 #### 3. Suíte Oficial Playwright E2E criada (`frontend/e2e/accessibility-responsiveness.spec.ts`)
 
 1. **Teste 1 — `auditoria AxeBuilder em páginas públicas, autenticadas e estados interativos`**:
@@ -2263,35 +2279,39 @@ Na execução do GitHub Actions **CI #17** (commit `e233e358f21dc52895023b5dba6e
 
 #### 4. Resultados reais da bateria de verificação local e métricas de performance
 
-| Verificação / Suíte                                 | Comando / Escopo                                                                                                                               | Resultado Obtido                                                                              |
-| :-------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------- |
-| **Backend Lint & Typecheck**                        | `npm --prefix backend run lint && npm --prefix backend run typecheck`                                                                          | **PASS** (`0` erros, `0` warnings)                                                            |
-| **Backend Testes Unitários & Arquiteturais**        | `npm --prefix backend run test`                                                                                                                | **PASS** (**22 arquivos**, **279 testes passando** em `7,80s`)                                |
-| **Backend Build de Produção**                       | `npm --prefix backend run build`                                                                                                               | **PASS** (`nest build` sem erros)                                                             |
-| **Frontend Lint & Typecheck**                       | `npm --prefix frontend run lint && npm --prefix frontend run typecheck`                                                                        | **PASS** (`0` erros, `0` warnings, incluindo `frontend/e2e/`)                                 |
-| **Frontend Testes Unitários & Componentes**         | `npm --prefix frontend run test`                                                                                                               | **PASS** (**40 arquivos**, **274 testes passando** em `24,53s`)                               |
-| **Frontend Build de Produção**                      | `npm --prefix frontend run build`                                                                                                              | **PASS** (`950ms`, `0` warnings, todos os chunks `< 500 kB`)                                  |
-| **Exclusão de `axe-core` do bundle**                | Busca em `frontend/dist/**/*` por `axe-core` / `AxeBuilder`                                                                                    | **PASS** (`0` ocorrências no bundle de produção)                                              |
-| **Pré-validação Chromium + `AxeBuilder` + Teclado** | 57 auditorias `AxeBuilder` (`1440×900`, `768×1024`, `375×812` + modais/erros) + fluxos de teclado/foco sobre `frontend/dist` com APIs mockadas | **PASS** (**57/57 auditorias com `0` violações** e todos os fluxos de teclado/foco aprovados) |
-| **Auditoria de Dependências (Produção)**            | `npm --prefix backend audit --omit=dev` e `npm --prefix frontend audit --omit=dev`                                                             | **PASS** (`0` vulnerabilidades)                                                               |
-| **Formatação (Prettier)**                           | `npm run format:check`                                                                                                                         | **PASS** (100% dos arquivos conformes)                                                        |
+| Verificação / Suíte                                 | Comando / Escopo                                                                                                                            | Resultado Obtido                                                                          |
+| :-------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------ | :---------------------------------------------------------------------------------------- |
+| **Backend Lint & Typecheck**                        | `npm --prefix backend run lint && npm --prefix backend run typecheck`                                                                       | **PASS** (`0` erros, `0` warnings)                                                        |
+| **Backend Testes Unitários & Arquiteturais**        | `npm --prefix backend run test`                                                                                                             | **PASS** (**22 arquivos**, **281 testes passando** em `3,68s`)                            |
+| **Backend Build de Produção**                       | `npm --prefix backend run build`                                                                                                            | **PASS** (`nest build` sem erros)                                                         |
+| **Frontend Lint & Typecheck**                       | `npm --prefix frontend run lint && npm --prefix frontend run typecheck`                                                                     | **PASS** (`0` erros, `0` warnings, incluindo `frontend/e2e/`)                             |
+| **Frontend Testes Unitários & Componentes**         | `npm --prefix frontend run test`                                                                                                            | **PASS** (**40 arquivos**, **274 testes passando** em `20,60s`)                           |
+| **Frontend Build de Produção**                      | `npm --prefix frontend run build`                                                                                                           | **PASS** (`907ms`, `0` warnings, todos os chunks `< 500 kB`)                              |
+| **Exclusão de `axe-core` do bundle**                | Busca em `frontend/dist/**/*` por `axe-core` / `AxeBuilder`                                                                                 | **PASS** (`0` ocorrências no bundle de produção)                                          |
+| **Pré-validação Chromium + `AxeBuilder` + SPA Nav** | 57 auditorias `AxeBuilder` (`1440×900`, `768×1024`, `375×812` + modais/erros) + 25 navegações SPA via UI + `uiLogout` sobre `frontend/dist` | **PASS** (**57/57 auditorias com `0` violações** e **1 única chamada** a `/auth/refresh`) |
+| **Auditoria de Dependências (Produção)**            | `npm --prefix backend audit --omit=dev` e `npm --prefix frontend audit --omit=dev`                                                          | **PASS** (`0` vulnerabilidades)                                                           |
+| **Formatação (Prettier)**                           | `npm run format:check`                                                                                                                      | **PASS** (100% dos arquivos conformes)                                                    |
 
 - **Preservação das métricas de performance da Subetapa 7C.1**:
   - Maior chunk sob demanda: `vendor-charts` com `368,32 kB` (`105,75 kB` gzip) — inalterado.
   - Chunks iniciais (`index` `113,96 kB`, `vendor-react` `310,19 kB`, `vendor-query` `34,88 kB`, `button` `35,78 kB`): todos estritamente `< 500 kB` (`0` alertas do Vite).
   - Otimização de N+1 em `InventoryDetailPage` e filtro direto `currentStock = 0` em `ProductsService` integralmente preservados e validados pelas suítes unitárias.
 
-#### 5. Limitações de validação e matriz de critérios de aceite do Marco 7C
+#### 5. Limitações de validação, testes pendentes e critérios para o próximo CI
 
 1. **Diferenciação entre pré-validação com APIs mockadas e E2E integrado com PostgreSQL real**:
-   - Como o ambiente Windows local não possui PostgreSQL ativo nem Docker, a pré-validação em Chromium headless das 57 auditorias `AxeBuilder` e interações de teclado foi executada sobre o build de produção (`frontend/dist`) com interceptação de rotas (`/api/v1/**` mockadas).
-   - A execução integrada da suíte `frontend/e2e/accessibility-responsiveness.spec.ts` (junto com `stock-cycle.spec.ts`, `inventory-approval.spec.ts` e os `462` testes de integração do backend) contra PostgreSQL 17 real ocorrerá no job `e2e` / `backend` do GitHub Actions após autorização de publicação.
+   - Como o ambiente Windows local não possui PostgreSQL ativo nem Docker, os **463 testes de integração do backend** (incluindo o novo caso em `backend/test/inventories.int-spec.ts` para `GET /inventories?page=1&sort=startedAt&order=desc` e `sort=code -> 400`) e os **5 testes E2E do Playwright** contra banco PostgreSQL 17 real permanecem pendentes de validação definitiva no próximo workflow do GitHub Actions (**CI #19**).
+   - **Critérios para aprovação do próximo CI**: todos os **5 jobs** (`Segredos`, `Formatação`, `Frontend`, `Backend` com 463 testes de integração e `E2E` com os 5 fluxos Playwright) devem concluir com status **SUCCESS (100% verde)**.
 2. **Escopo da conformidade WCAG 2.2 AA**:
    - A auditoria automatizada com `@axe-core/playwright` (`0` violações em 57 estados/viewports) somada aos testes funcionais de teclado, foco, contraste OKLCH e árvore de acessibilidade cobre os critérios programaticamente verificáveis da WCAG 2.2 AA, mas **não substitui** testes assistidos por humanos utilizando leitores de tela dedicados (NVDA, JAWS, VoiceOver) em fluxos reais completos.
 
-#### 6. Inventário de arquivos da Subetapa 7C.3 (14 arquivos)
+#### 6. Inventário de arquivos da Subetapa 7C.3 (18 arquivos)
 
-- **Arquivos modificados (13)**:
+- **Arquivos modificados (17)**:
+  - `backend/src/common/utils/pagination.spec.ts`
+  - `backend/src/inventories/dto/query-inventories.dto.ts`
+  - `backend/src/inventories/inventories.service.ts`
+  - `backend/test/inventories.int-spec.ts`
   - `docs/19-plano-fase-7.md`
   - `frontend/package.json`
   - `frontend/package-lock.json`
