@@ -208,6 +208,35 @@ describe('Inventário (integração)', () => {
         productName: p1.name,
       });
     });
+
+    it('aceita GET /inventories?page=1&sort=startedAt&order=desc e rejeita coluna de ordenação não permitida (400)', async () => {
+      const p1 = await createProduct(prisma, categoryId, { currentStock: '10.000' });
+      const p2 = await createProduct(prisma, categoryId, { currentStock: '10.000' });
+      const primeiro = await openInventory(manager, [p1.id]);
+      const idPrimeiro = (primeiro.body as { id: string }).id;
+      const segundo = await openInventory(manager, [p2.id]);
+      const idSegundo = (segundo.body as { id: string }).id;
+
+      const ordenadaDesc = await request(app.getHttpServer())
+        .get('/api/v1/inventories?page=1&sort=startedAt&order=desc')
+        .set('Authorization', bearer(operator));
+      expect(ordenadaDesc.status).toBe(200);
+      const idsDesc = (ordenadaDesc.body as { data: { id: string }[] }).data.map((i) => i.id);
+      expect(idsDesc).toEqual([idSegundo, idPrimeiro]);
+
+      const ordenadaAsc = await request(app.getHttpServer())
+        .get('/api/v1/inventories?page=1&sort=startedAt&order=asc')
+        .set('Authorization', bearer(operator));
+      expect(ordenadaAsc.status).toBe(200);
+      const idsAsc = (ordenadaAsc.body as { data: { id: string }[] }).data.map((i) => i.id);
+      expect(idsAsc).toEqual([idPrimeiro, idSegundo]);
+
+      const sortInvalido = await request(app.getHttpServer())
+        .get('/api/v1/inventories?page=1&sort=code&order=desc')
+        .set('Authorization', bearer(operator));
+      expect(sortInvalido.status).toBe(400);
+      expect((sortInvalido.body as { code: string }).code).toBe('VALIDATION_ERROR');
+    });
   });
 
   describe('Ciclo completo', () => {

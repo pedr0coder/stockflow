@@ -1,5 +1,8 @@
 import { HttpStatus } from '@nestjs/common';
+import { plainToInstance } from 'class-transformer';
+import { validateSync } from 'class-validator';
 import { describe, expect, it } from 'vitest';
+import { QueryInventoriesDto } from '../../inventories/dto/query-inventories.dto';
 import { buildPage } from '../dto/page.dto';
 import { isDomainError } from '../errors/domain.error';
 import { ErrorCode } from '../errors/error-codes';
@@ -93,5 +96,32 @@ describe('buildPage', () => {
       hasNext: false,
       hasPrev: false,
     });
+  });
+});
+
+describe('QueryInventoriesDto (contrato de ordenação)', () => {
+  it('aceita page=1, sort=startedAt e order=desc com whitelist/forbidNonWhitelisted', () => {
+    const dto = plainToInstance(QueryInventoriesDto, {
+      page: '1',
+      sort: 'startedAt',
+      order: 'desc',
+    });
+    const errors = validateSync(dto, { whitelist: true, forbidNonWhitelisted: true });
+
+    expect(errors).toHaveLength(0);
+    expect(dto.sort).toBe('startedAt');
+    expect(dto.order).toBe('desc');
+  });
+
+  it('rejeita valor de sort fora de INVENTORY_SORT_COLUMNS', () => {
+    const dto = plainToInstance(QueryInventoriesDto, {
+      page: '1',
+      sort: 'code',
+      order: 'desc',
+    });
+    const errors = validateSync(dto, { whitelist: true, forbidNonWhitelisted: true });
+
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors[0]?.property).toBe('sort');
   });
 });

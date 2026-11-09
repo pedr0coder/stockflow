@@ -18,7 +18,7 @@ import {
 import { BusinessRuleError } from '../common/errors/resource.errors';
 import { formatDecimalField } from '../common/utils/decimal-scale';
 import { PG_NUMERIC_OVERFLOW, PG_UNIQUE_VIOLATION, pgErrorCode } from '../common/utils/pg-error';
-import { toSkipTake } from '../common/utils/pagination';
+import { resolveSortColumn, toSkipTake } from '../common/utils/pagination';
 import { MovementReason, MovementType, InventoryStatus } from '../generated/prisma/enums';
 import { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -30,7 +30,7 @@ import type {
   InventoryItemDto,
 } from './dto/inventory.dto';
 import { OpenInventoryDto } from './dto/open-inventory.dto';
-import { QueryInventoriesDto } from './dto/query-inventories.dto';
+import { INVENTORY_SORT_COLUMNS, QueryInventoriesDto } from './dto/query-inventories.dto';
 import {
   applyInventoryDelta,
   cancelInventory,
@@ -169,13 +169,14 @@ export class InventoriesService {
   }
 
   async findAll(query: QueryInventoriesDto): Promise<PageDto<InventoryDto>> {
+    const sort = resolveSortColumn(query.sort, INVENTORY_SORT_COLUMNS, 'startedAt');
     const { skip, take } = toSkipTake(query.page, query.limit);
     const where = query.status !== undefined ? { status: query.status } : {};
 
     const [rows, total] = await Promise.all([
       this.prisma.inventory.findMany({
         where,
-        orderBy: [{ startedAt: query.order }, { id: 'desc' }],
+        orderBy: [{ [sort]: query.order }, { id: 'desc' }],
         skip,
         take,
         include: WITH_USERS,
