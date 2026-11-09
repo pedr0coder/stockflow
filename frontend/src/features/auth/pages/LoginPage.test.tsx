@@ -14,7 +14,10 @@ import type { AuthContextValue } from '@/types/auth';
  * só que agora pelo caminho contrário: a sessão É criada quando a credencial
  * é válida, e NÃO é criada quando é rejeitada.
  */
-function renderLogin(signIn: AuthContextValue['signIn'] = vi.fn()) {
+function renderLogin(
+  signIn: AuthContextValue['signIn'] = vi.fn(),
+  initialEntry: string | { pathname: string; state?: { from?: string } } = '/login',
+) {
   const value: AuthContextValue = {
     user: null,
     isLoading: false,
@@ -24,11 +27,12 @@ function renderLogin(signIn: AuthContextValue['signIn'] = vi.fn()) {
   };
 
   render(
-    <MemoryRouter initialEntries={['/login']}>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <AuthContext value={value}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/dashboard" element={<p>conteúdo do dashboard</p>} />
+          <Route path="/reports" element={<p>conteúdo de relatórios</p>} />
         </Routes>
       </AuthContext>
     </MemoryRouter>,
@@ -108,6 +112,20 @@ describe('LoginPage', () => {
 
       expect(signIn).toHaveBeenCalledWith('ana@empresa.com', 'uma-senha-valida');
       expect(await screen.findByText('conteúdo do dashboard')).toBeInTheDocument();
+    });
+
+    it('redireciona para a rota de origem em location.state.from quando diferente de /dashboard', async () => {
+      const signIn = vi.fn().mockResolvedValue(undefined);
+      const user = userEvent.setup();
+      renderLogin(signIn, { pathname: '/login', state: { from: '/reports' } });
+
+      await user.type(screen.getByRole('textbox', { name: /e-mail/i }), 'operador@stockflow.local');
+      await user.type(screen.getByLabelText(/^senha/i), 'uma-senha-valida');
+      await user.click(screen.getByRole('button', { name: 'Entrar' }));
+
+      expect(signIn).toHaveBeenCalledWith('operador@stockflow.local', 'uma-senha-valida');
+      expect(await screen.findByText('conteúdo de relatórios')).toBeInTheDocument();
+      expect(screen.queryByText('conteúdo do dashboard')).not.toBeInTheDocument();
     });
 
     it('credencial inválida (401) mostra mensagem específica, sem navegar', async () => {

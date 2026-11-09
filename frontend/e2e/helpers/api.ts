@@ -30,6 +30,42 @@ const SEED_PASSWORDS: Record<string, string | undefined> = {
   'operador@stockflow.local': process.env['SEED_OPERATOR_PASSWORD'],
 };
 
+const SEED_USER_NAMES: Record<string, RegExp> = {
+  'admin@stockflow.local': /Ana Administradora/i,
+  'gerente@stockflow.local': /Bruno Gerente/i,
+  'operador@stockflow.local': /Carla Operadora/i,
+};
+
+/**
+ * Padrões de URL de rotas autenticadas autorizadas por perfil do seed.
+ *
+ * - `ADMIN`: todas as rotas autenticadas do `AppShell` (incluindo `/users` e `/audit`).
+ * - `MANAGER`: rotas operacionais, gerenciais e `/users` (sem `/audit`).
+ * - `OPERATOR`: apenas rotas operacionais e de consulta (sem `/users`, `/audit`,
+ *   `/products/new`, `/products/:id/edit`, `/suppliers/new`, `/inventories/new`).
+ */
+const AUTHORIZED_POST_LOGIN_URL_BY_EMAIL: Record<string, RegExp> = {
+  'admin@stockflow.local':
+    /\/(?:dashboard|categories|products(?:\/[^/?#]+(?:\/edit)?)?|suppliers(?:\/[^/?#]+)?|movements(?:\/new)?|inventories(?:\/[^/?#]+)?|reports|users(?:\/[^/?#]+)?|audit|profile|design-system)$/,
+  'gerente@stockflow.local':
+    /\/(?:dashboard|categories|products(?:\/[^/?#]+(?:\/edit)?)?|suppliers(?:\/[^/?#]+)?|movements(?:\/new)?|inventories(?:\/[^/?#]+)?|reports|users(?:\/[^/?#]+)?|profile|design-system)$/,
+  'operador@stockflow.local':
+    /\/(?:dashboard|categories|products(?:\/(?!new$)[^/?#]+)?|suppliers(?:\/(?!new$)[^/?#]+)?|movements(?:\/new)?|inventories(?:\/(?!new$)[^/?#]+)?|reports|profile|design-system)$/,
+};
+
+const DEFAULT_AUTHORIZED_POST_LOGIN_URL =
+  /\/(?:dashboard|categories|products(?:\/(?!new$)[^/?#]+)?|suppliers(?:\/(?!new$)[^/?#]+)?|movements(?:\/new)?|inventories(?:\/(?!new$)[^/?#]+)?|reports|profile|design-system)$/;
+
+export interface UiLoginOptions {
+  /**
+   * Padrão de URL esperado após o login quando o teste valida um
+   * redirecionamento específico (`location.state.from`). Mesmo quando
+   * informado, a rota ainda precisa pertencer ao conjunto de rotas
+   * autorizadas para o perfil autenticado.
+   */
+  expectedPath?: RegExp;
+}
+
 export function seedPasswordFor(email: string): string {
   const password = SEED_PASSWORDS[email];
 
@@ -71,12 +107,13 @@ function isDiagnosticRequestUrl(url: string): boolean {
 }
 
 /**
- * Login pela interface real (`/login` → `/dashboard`) com coleta de evidências
- * de diagnóstico em caso de falha (URL final, alerta visível, status de
- * requisições relevantes e erros de console/página, sempre com redação de
- * dados sensíveis).
+ * Login pela interface real (`/login` → `/dashboard` ou rota preservada em
+ * `location.state.from`) com validação de estado autenticado, rota autorizada
+ * para o perfil e coleta de evidências de diagnóstico em caso de falha
+ * (URL final, alerta visível, status de requisições relevantes e erros de
+ * console/página, sempre com redação de dados sensíveis).
  */
-export async function uiLogin(page: Page, email: string): Promise<void> {
+export async function uiLogin(page: Page, email: string, options?: UiLoginOptions): Promise<void> {
   const consoleErrors: string[] = [];
   const relevantRequests: string[] = [];
 
@@ -111,16 +148,50 @@ export async function uiLogin(page: Page, email: string): Promise<void> {
   page.on('response', onResponse);
   page.on('requestfailed', onRequestFailed);
 
+  const emailInput = page.getByLabel('E-mail');
   const passwordInput = page.getByLabel(/^Senha/);
+  const submitButton = page.getByRole('button', { name: /^(?:Entrar|Entrando…)$/ });
 
   try {
     if (!page.url().endsWith('/login')) {
       await page.goto('/login');
     }
-    await page.getByLabel('E-mail').fill(email);
+    await emailInput.fill(email);
     await passwordInput.fill(seedPasswordFor(email));
     await page.getByRole('button', { name: 'Entrar' }).click();
-    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const allowedRoutePattern =
+      AUTHORIZED_POST_LOGIN_URL_BY_EMAIL[normalizedEmail] ?? DEFAULT_AUTHORIZED_POST_LOGIN_URL;
+
+    // 1. A navegação pós-login deve alcançar uma rota autenticada autorizada para o perfil
+    await expect(page).toHaveURL(allowedRoutePattern);
+    if (options?.expectedPath) {
+      await expect(page).toHaveURL(options.expectedPath);
+    }
+
+    // 2. O formulário de login deve ter desaparecido e não pode haver alerta de erro
+    await expect(emailInput).toBeHidden();
+    await expect(passwordInput).toBeHidden();
+    await expect(submitButton).toBeHidden();
+    await expect(page.getByRole('alert')).toHaveCount(0);
+
+    // 3. O AppShell autenticado deve estar visível com a sessão correspondente no Header
+    const mainContent = page.locator('main#conteudo');
+    await expect(mainContent).toBeVisible();
+    const expectedUserName = SEED_USER_NAMES[normalizedEmail];
+    if (expectedUserName) {
+      await expect(
+        page.locator('header').getByRole('button', { name: expectedUserName }),
+      ).toBeVisible();
+    }
+
+    // 4. O cabeçalho principal da rota de destino deve estar visível e válido (não login, 403 ou 404)
+    const pageHeading = mainContent.getByRole('heading', { level: 1 }).first();
+    await expect(pageHeading).toBeVisible();
+    await expect(pageHeading).not.toHaveText(
+      /^(?:Entrar|Acesso não permitido|Página não encontrada)$/i,
+    );
   } catch (error) {
     const currentUrl = redactDiagnosticText(page.url());
     const rawAlert = await page

@@ -2260,6 +2260,23 @@ Na execução do GitHub Actions **CI #18** (commit `541d318699068f31b915e156a4af
    - **Causa raiz**: a combinação de 17 análises `AxeBuilder.analyze()` com recarregamentos completos de página a cada rota levou `31,7s` no runner do GitHub Actions.
    - **Correção**: além da eliminação dos reloads via `navigateViaUi` e da remoção de visitas duplicadas às mesmas rotas no Teste 1, foi configurado `test.setTimeout(60_000)` especificamente nos Testes 1 e 2 (mantendo o timeout global de `30s` inalterado para o restante da suíte) e estruturados passos `test.step(...)` por rota.
 
+#### 2.3. Diagnóstico do GitHub Actions CI #19 (`e788993`) e correção aplicada
+
+Na execução do GitHub Actions **CI #19** (commit `e788993133c78331f005ac9690b4e3ccb21ba567`, Run ID `42570267156`), os jobs `Segredos`, `Formatação`, `Frontend` e `Backend` (incluindo os **463 testes de integração** com PostgreSQL 17 validando `GET /inventories?page=1&sort=startedAt&order=desc`) passaram verdes, e no job `E2E` **4 dos 5 testes passaram** (`stock-cycle.spec.ts`, `inventory-approval.spec.ts` e os Testes 1 e 3 de `accessibility-responsiveness.spec.ts`), restando apenas 1 falha no final do **Teste 2** (`accessibility-responsiveness.spec.ts:327`):
+
+- **Causa raiz (Expectativa rígida em `uiLogin` vs. redirecionamento legítimo `location.state.from` do `ProtectedRoute`)**:
+  - Ao final da etapa `2.2` do Teste 2, a sessão `ADMIN` encontra-se na rota `/reports` e aciona `uiLogout` (`DropdownMenuItem` `"Sair"` -> `AuthProvider.signOut()`).
+  - Como `signOut()` limpa o token e define `user = null` sem navegar manualmente, `ProtectedRoute.tsx` reage a `!isAuthenticated` renderizando `<Navigate to="/login" replace state={{ from: location.pathname }} />`, preservando `location.state.from = '/reports'`.
+  - Na sequência (`accessibility-responsiveness.spec.ts:327`), `uiLogin(page, 'operador@stockflow.local')` submete o formulário em `/login` (`POST /api/v1/auth/login -> 200`), e `LoginPage.tsx` (`navigate(state?.from ?? '/dashboard', { replace: true })`) redireciona legitimamente a sessão `OPERATOR` para `/reports` (onde o cabeçalho `<h1>` é `"Relatórios"`).
+  - O helper `uiLogin` em `frontend/e2e/helpers/api.ts` possuía a asserção rígida `await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()`, causando timeout em `/reports`.
+- **Correção**:
+  - `uiLogin(page, email, options?)` em `frontend/e2e/helpers/api.ts` foi atualizado para validar a autenticação bem-sucedida por 4 critérios combinados:
+    1. URL de destino pertencente ao conjunto estrito de rotas autenticadas autorizadas para o perfil (`AUTHORIZED_POST_LOGIN_URL_BY_EMAIL`, impedindo que `OPERATOR` valide sucesso em `/users`, `/audit` ou rotas de criação/edição restritas) e, quando informado, correspondente a `options.expectedPath`;
+    2. Desaparecimento completo do formulário de login (`emailInput`, `passwordInput` e botão `Entrar` ocultos) e ausência de qualquer alerta de erro (`role="alert"`);
+    3. `AppShell` autenticado visível (`main#conteudo`) com o botão de sessão do usuário correspondente (`Ana Administradora`, `Bruno Gerente` ou `Carla Operadora`) presente no `<header>`;
+    4. Cabeçalho `<h1>` da rota de destino visível e diferente de `"Entrar"`, `"Acesso não permitido"` (`ForbiddenPage`) ou `"Página não encontrada"` (`NotFoundPage`).
+  - Adicionado teste regressivo unitário em `frontend/src/features/auth/pages/LoginPage.test.tsx` (`redireciona para a rota de origem em location.state.from quando diferente de /dashboard`) e asserção explícita de `expectedPath: /\/reports$/` + cabeçalho `"Relatórios"` e RBAC mobile na etapa `2.3` de `frontend/e2e/accessibility-responsiveness.spec.ts`.
+
 #### 3. Suíte Oficial Playwright E2E criada (`frontend/e2e/accessibility-responsiveness.spec.ts`)
 
 1. **Teste 1 — `auditoria AxeBuilder em páginas públicas, autenticadas e estados interativos`**:
@@ -2285,7 +2302,7 @@ Na execução do GitHub Actions **CI #18** (commit `541d318699068f31b915e156a4af
 | **Backend Testes Unitários & Arquiteturais**        | `npm --prefix backend run test`                                                                                                             | **PASS** (**22 arquivos**, **281 testes passando** em `3,68s`)                            |
 | **Backend Build de Produção**                       | `npm --prefix backend run build`                                                                                                            | **PASS** (`nest build` sem erros)                                                         |
 | **Frontend Lint & Typecheck**                       | `npm --prefix frontend run lint && npm --prefix frontend run typecheck`                                                                     | **PASS** (`0` erros, `0` warnings, incluindo `frontend/e2e/`)                             |
-| **Frontend Testes Unitários & Componentes**         | `npm --prefix frontend run test`                                                                                                            | **PASS** (**40 arquivos**, **274 testes passando** em `20,60s`)                           |
+| **Frontend Testes Unitários & Componentes**         | `npm --prefix frontend run test`                                                                                                            | **PASS** (**40 arquivos**, **275 testes passando** em `19,45s`)                           |
 | **Frontend Build de Produção**                      | `npm --prefix frontend run build`                                                                                                           | **PASS** (`907ms`, `0` warnings, todos os chunks `< 500 kB`)                              |
 | **Exclusão de `axe-core` do bundle**                | Busca em `frontend/dist/**/*` por `axe-core` / `AxeBuilder`                                                                                 | **PASS** (`0` ocorrências no bundle de produção)                                          |
 | **Pré-validação Chromium + `AxeBuilder` + SPA Nav** | 57 auditorias `AxeBuilder` (`1440×900`, `768×1024`, `375×812` + modais/erros) + 25 navegações SPA via UI + `uiLogout` sobre `frontend/dist` | **PASS** (**57/57 auditorias com `0` violações** e **1 única chamada** a `/auth/refresh`) |
@@ -2300,8 +2317,8 @@ Na execução do GitHub Actions **CI #18** (commit `541d318699068f31b915e156a4af
 #### 5. Limitações de validação, testes pendentes e critérios para o próximo CI
 
 1. **Diferenciação entre pré-validação com APIs mockadas e E2E integrado com PostgreSQL real**:
-   - Como o ambiente Windows local não possui PostgreSQL ativo nem Docker, os **463 testes de integração do backend** (incluindo o novo caso em `backend/test/inventories.int-spec.ts` para `GET /inventories?page=1&sort=startedAt&order=desc` e `sort=code -> 400`) e os **5 testes E2E do Playwright** contra banco PostgreSQL 17 real permanecem pendentes de validação definitiva no próximo workflow do GitHub Actions (**CI #19**).
-   - **Critérios para aprovação do próximo CI**: todos os **5 jobs** (`Segredos`, `Formatação`, `Frontend`, `Backend` com 463 testes de integração e `E2E` com os 5 fluxos Playwright) devem concluir com status **SUCCESS (100% verde)**.
+   - No **CI #19**, os **463 testes de integração do backend** com PostgreSQL 17 e **4 dos 5 testes E2E do Playwright** foram aprovados. Como o ambiente Windows local não possui PostgreSQL ativo nem Docker, a execução integrada completa dos **5 testes E2E do Playwright** (incluindo o `Teste 2` de `accessibility-responsiveness.spec.ts` com a correção de redirecionamento pós-login em `uiLogin`) permanece pendente de validação definitiva no próximo workflow do GitHub Actions (**CI #20**).
+   - **Critérios para aprovação do próximo CI (CI #20)**: todos os **5 jobs** (`Segredos`, `Formatação`, `Frontend`, `Backend` com 463 testes de integração e `E2E` com os 5 fluxos Playwright) devem concluir com status **SUCCESS (100% verde)**.
 2. **Escopo da conformidade WCAG 2.2 AA**:
    - A auditoria automatizada com `@axe-core/playwright` (`0` violações em 57 estados/viewports) somada aos testes funcionais de teclado, foco, contraste OKLCH e árvore de acessibilidade cobre os critérios programaticamente verificáveis da WCAG 2.2 AA, mas **não substitui** testes assistidos por humanos utilizando leitores de tela dedicados (NVDA, JAWS, VoiceOver) em fluxos reais completos.
 

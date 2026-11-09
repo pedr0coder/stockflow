@@ -321,16 +321,19 @@ test.describe('Marco 7C — Acessibilidade WCAG 2.2 AA, Responsividade e Teclado
       }
     }
 
-    // ── 2.3 Preservação de RBAC nos cards mobile (375x812) para perfil OPERATOR ──
+    // ── 2.3 Redirecionamento pós-login (location.state.from = /reports) e RBAC mobile (375x812) para OPERATOR ──
     await uiLogout(page, /Ana Administradora/i);
     await page.setViewportSize({ width: 375, height: 812 });
-    await uiLogin(page, 'operador@stockflow.local');
+    await uiLogin(page, 'operador@stockflow.local', { expectedPath: /\/reports$/ });
+    await expect(page.getByRole('heading', { level: 1, name: 'Relatórios' })).toBeVisible();
+
     await navigateViaUi(page, '/products');
     await waitForPageReady(page);
     const operatorCards = page.locator('main ul.sm\\:hidden').first();
     await expect(operatorCards).toBeVisible();
     await expect(operatorCards.getByRole('link', { name: /Editar/i })).toHaveCount(0);
     await expect(operatorCards.getByRole('button', { name: /Inativar/i })).toHaveCount(0);
+    await expect(page.getByRole('link', { name: /Novo produto/i })).toHaveCount(0);
   });
 
   test('3. navegação por teclado, skip link, retorno de foco, erros ARIA, contagem com Enter e movimento reduzido', async ({
