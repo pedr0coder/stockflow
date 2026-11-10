@@ -1,0 +1,3 @@
+# Fallback SPA para React Router (createBrowserRouter) no Cloudflare Pages.
+# Requisições para /api/* são atendidas antes pela Pages Function em functions/api/[[catchall]].ts.
+/* /index.html 200

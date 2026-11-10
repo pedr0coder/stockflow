@@ -31,6 +31,10 @@ export default defineConfig({
     seed: 'tsx prisma/seed.ts',
   },
   datasource: {
-    url: process.env['DATABASE_URL'],
+    // Em produção com Neon PostgreSQL (Fase 8), `DIRECT_URL` aponta para a
+    // conexão direta (sem PgBouncer) recomendada para DDL (`prisma migrate deploy`),
+    // enquanto `DATABASE_URL` pode usar o endpoint `-pooler`. Em desenvolvimento
+    // e no CI, `DIRECT_URL` é omitida e `DATABASE_URL` continua sendo usada.
+    url: process.env['DIRECT_URL'] ?? process.env['DATABASE_URL'],
   },
 });

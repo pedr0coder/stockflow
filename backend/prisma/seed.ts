@@ -83,7 +83,7 @@ const USERS: readonly SeedUser[] = [
   },
 ];
 
-const CATEGORIES: readonly { name: string; description: string }[] = [
+export const CATEGORIES: readonly { name: string; description: string }[] = [
   { name: 'Ferramentas manuais', description: 'Chaves, alicates, martelos e similares.' },
   { name: 'Fixadores', description: 'Parafusos, porcas, arruelas, buchas e rebites.' },
   { name: 'Elétrica', description: 'Cabos, conectores, disjuntores e fitas isolantes.' },
@@ -93,7 +93,7 @@ const CATEGORIES: readonly { name: string; description: string }[] = [
   { name: 'Lubrificantes', description: 'Óleos, graxas e desengripantes.' },
 ];
 
-const SUPPLIERS: readonly { name: string; taxId: string; email: string; phone: string }[] = [
+export const SUPPLIERS: readonly { name: string; taxId: string; email: string; phone: string }[] = [
   {
     name: 'Distribuidora Exemplo Norte',
     taxId: '11.111.111/0001-11',
@@ -126,7 +126,7 @@ const SUPPLIERS: readonly { name: string; taxId: string; email: string; phone: s
   },
 ];
 
-interface SeedProduct {
+export interface SeedProduct {
   sku: string;
   name: string;
   category: string;
@@ -143,7 +143,7 @@ interface SeedProduct {
  * classificação (normal / baixo / sem estoque) tenha o que diferenciar quando
  * as movimentações entrarem na Fase 5.
  */
-const PRODUCTS: readonly SeedProduct[] = [
+export const PRODUCTS: readonly SeedProduct[] = [
   // Ferramentas manuais
   {
     sku: 'FER-0001',
@@ -515,7 +515,7 @@ function readSeedPassword(envVar: string): string {
   return value;
 }
 
-interface MovementPlan {
+export interface MovementPlan {
   type: 'IN' | 'OUT';
   quantity: string;
   reason: MovementReason;
@@ -569,7 +569,11 @@ function round3(value: number): string {
  *    saída parcial depois (10% a 30% da entrada) — estoque normal, com
  *    histórico de duas movimentações.
  */
-function planMovementsForProduct(sku: string, minStock: string, index: number): MovementPlan[] {
+export function planMovementsForProduct(
+  sku: string,
+  minStock: string,
+  index: number,
+): MovementPlan[] {
   const rng = seededRandom(hashString(sku));
   const min = Number.parseFloat(minStock);
 
@@ -806,8 +810,12 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error: unknown) => {
-  console.error('\nSeed falhou:');
-  console.error(error instanceof Error ? error.message : error);
-  process.exitCode = 1;
-});
+const isDirectExecution = require.main === module;
+
+if (isDirectExecution) {
+  main().catch((error: unknown) => {
+    console.error('\nSeed falhou:');
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
+  });
+}

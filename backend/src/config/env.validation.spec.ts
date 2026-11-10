@@ -114,6 +114,42 @@ describe('validateEnv', () => {
 
     expect(message).not.toContain(secret);
   });
+
+  it('em desenvolvimento ou teste, aceita PROXY_SECRET opcionalmente ou preserva undefined quando omitido', () => {
+    const semProxy = validateEnv(validEnv());
+    expect(semProxy.PROXY_SECRET).toBeUndefined();
+
+    const comProxy = validateEnv(
+      validEnv({ PROXY_SECRET: 'minha-chave-de-proxy-valida-32-chars-ok' }),
+    );
+    expect(comProxy.PROXY_SECRET).toBe('minha-chave-de-proxy-valida-32-chars-ok');
+  });
+
+  it('em produção, exige PROXY_SECRET com no mínimo 32 caracteres', () => {
+    const problemsMissing = problemsOf(
+      validEnv({
+        NODE_ENV: 'production',
+        PROXY_SECRET: undefined,
+      }),
+    );
+    expect(problemsMissing.join(' ')).toContain('PROXY_SECRET');
+
+    const problemsShort = problemsOf(
+      validEnv({
+        NODE_ENV: 'production',
+        PROXY_SECRET: 'curto',
+      }),
+    );
+    expect(problemsShort.join(' ')).toContain('PROXY_SECRET');
+
+    const validProd = validateEnv(
+      validEnv({
+        NODE_ENV: 'production',
+        PROXY_SECRET: 'segredo-de-proxy-producao-32-chars-ok!',
+      }),
+    );
+    expect(validProd.PROXY_SECRET).toBe('segredo-de-proxy-producao-32-chars-ok!');
+  });
 });
 
 describe('parseCorsOrigins', () => {

@@ -3,6 +3,7 @@ import {
   IsEnum,
   IsInt,
   IsNotEmpty,
+  IsOptional,
   IsString,
   Max,
   Min,
@@ -92,6 +93,16 @@ export class EnvironmentVariables {
 
   @IsEnum(LogLevel)
   LOG_LEVEL!: LogLevel;
+
+  /**
+   * Segredo opcional compartilhado entre o proxy Cloudflare Pages Functions e o NestJS.
+   * Quando configurado, permite autenticar a procedência da chamada e confiar no
+   * cabeçalho de client IP encaminhado pelo proxy sem abrir vetor de falsificação
+   * para quem chama o Render diretamente.
+   */
+  @IsOptional()
+  @IsString()
+  PROXY_SECRET?: string;
 }
 
 /**
@@ -152,6 +163,21 @@ export function validateEnv(raw: Record<string, unknown>): EnvironmentVariables 
 
   if (config.CORS_ORIGINS?.split(',').some((origin) => origin.trim() === '*')) {
     problems.push('CORS_ORIGINS não pode conter "*". Liste as origens explicitamente');
+  }
+
+  if (config.NODE_ENV === NodeEnv.Production) {
+    if (!config.PROXY_SECRET || config.PROXY_SECRET.trim().length < MIN_SECRET_LENGTH) {
+      problems.push(
+        `PROXY_SECRET é obrigatório em produção e deve ter no mínimo ${MIN_SECRET_LENGTH} caracteres`,
+      );
+    }
+  } else if (
+    config.PROXY_SECRET !== undefined &&
+    config.PROXY_SECRET.trim().length < MIN_SECRET_LENGTH
+  ) {
+    problems.push(
+      `PROXY_SECRET deve ter no mínimo ${MIN_SECRET_LENGTH} caracteres quando configurado`,
+    );
   }
 
   if (problems.length > 0) {

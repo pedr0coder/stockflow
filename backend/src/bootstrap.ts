@@ -8,7 +8,8 @@ import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { v7 as uuidv7 } from 'uuid';
 import { ApiErrorResponse, ErrorCode } from './common/errors/error-codes';
-import { EnvironmentVariables, parseCorsOrigins } from './config/env.validation';
+import { createClientIpMiddleware } from './common/middleware/client-ip.middleware';
+import { EnvironmentVariables, NodeEnv, parseCorsOrigins } from './config/env.validation';
 
 /** Prefixo de toda a API. Ver docs/02-arquitetura.md §2.7. */
 export const API_PREFIX = 'api/v1';
@@ -53,8 +54,20 @@ export const REQUEST_BODY_LIMIT_BYTES = 16 * 1024;
 export function configureApp(app: NestExpressApplication): INestApplication {
   const config = app.get(ConfigService<EnvironmentVariables, true>);
 
-  // Não anunciar o stack (docs/08-seguranca.md §8.6).
-  app.getHttpAdapter().getInstance().disable('x-powered-by');
+  // Não anunciar o stack (docs/08-seguranca.md §8.6) e confiar no primeiro
+  // salto de proxy reverso (Render) para que o socket remoto e `req.ip`
+  // reflitam o IP que conectou ao Render.
+  const expressInstance = app.getHttpAdapter().getInstance();
+  expressInstance.disable('x-powered-by');
+  expressInstance.set('trust proxy', 1);
+
+  // Normalização e proteção de client IP na cadeia Cloudflare Pages -> Render -> NestJS.
+  // Se `PROXY_SECRET` estiver configurado, confia no IP encaminhado pela nossa
+  // Pages Function autenticada. Em produção, acessos diretos não autenticados a
+  // rotas de negócio são rejeitados com HTTP 403 (preservando apenas health checks).
+  const proxySecret = config.get('PROXY_SECRET', { infer: true });
+  const isProduction = config.get('NODE_ENV', { infer: true }) === NodeEnv.Production;
+  app.use(createClientIpMiddleware({ proxySecret, isProduction }));
 
   /**
    * Leitura de cookie.

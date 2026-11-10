@@ -90,7 +90,7 @@ export default tseslint.config(
   {
     // O seed e os scripts de preparação de banco informam o progresso no
     // terminal: é a saída deles, não log perdido.
-    files: ['prisma/seed.ts', 'scripts/**/*.ts'],
+    files: ['prisma/seed.ts', 'prisma/seed-demo.ts', 'scripts/**/*.ts'],
     rules: { 'no-console': 'off' },
   },
 

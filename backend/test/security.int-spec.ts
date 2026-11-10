@@ -206,6 +206,26 @@ describe('Segurança (integração)', () => {
 
       expect(response.status).toBe(200);
     });
+
+    it('forjar cabeçalhos X-Forwarded-For ou CF-Connecting-IP em acesso direto não burla o rate limit de login', async () => {
+      const usuario = await createUser(prisma, UserRole.OPERATOR);
+      const statusObtidos: number[] = [];
+
+      for (let i = 1; i <= 6; i += 1) {
+        const response = await request(app.getHttpServer())
+          .post('/api/v1/auth/login')
+          .set('X-Forwarded-For', `198.51.100.${i}`)
+          .set('CF-Connecting-IP', `203.0.113.${i}`)
+          .send({ email: usuario.email, password: 'errada-mas-longa' });
+
+        statusObtidos.push(response.status);
+      }
+
+      // Sem o segredo compartilhado de proxy, os headers forjados são sumariamente
+      // ignorados e todas as tentativas caem no mesmo IP real da conexão.
+      expect(statusObtidos.slice(0, 5)).toEqual([401, 401, 401, 401, 401]);
+      expect(statusObtidos[5]).toBe(429);
+    });
   });
 
   describe('o limite geral não se aplica às rotas de autenticação', () => {
