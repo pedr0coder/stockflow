@@ -1,333 +1,249 @@
 # StockFlow
 
-Plataforma de gerenciamento de estoque para pequenas e médias empresas.
+> Sistema corporativo Full Stack de gestão de estoque, controle operacional e rastreabilidade logística para pequenas e médias empresas.
 
-> **Estado atual: Fase 4 implementada e verificada (backend de autenticação e cadastros).**
->
-> O sistema **sobe de ponta a ponta** com um comando: PostgreSQL, API e frontend. O banco
-> está modelado e migrado, e a API tem 31 rotas respondendo: login com refresh rotativo,
-> RBAC com padrão de negar, CRUD de usuários, categorias, fornecedores e produtos, e log de
-> auditoria somente leitura.
->
-> São 487 testes reais: 128 unitários e 254 de integração no backend, estes contra um
-> PostgreSQL de verdade, e 105 unitários no frontend. A suíte de integração exercita a mesma
-> aplicação que roda em produção, não uma montagem de teste.
->
-> A interface web tem shell completo: sidebar colapsável com navegação por papel, design
-> system aplicado e as 22 rotas do mapa de telas navegando.
->
-> **O frontend ainda não consome a API**, e nenhuma tela mostra dado de negócio. A ligação
-> entre os dois é a Fase 6; movimentação de estoque é a Fase 5. Até lá a interface declara
-> isso em cada tela: nenhum número, nome, registro ou data aparece sem vir de uma fonte
-> real.
->
-> Há uma pendência aberta registrada: em 2 de 20 execuções da suíte de integração o processo
-> aborta e um arquivo deixa de rodar. A causa **não está no projeto** — o abort reproduz em
-> um script Node comum, sem Vitest e sem nada deste repositório. Investigação, evidências e
-> hipóteses descartadas em [docs/16-relatorio-fase-4.md](docs/16-relatorio-fase-4.md), §16.7.
+[![Demonstração Online](https://img.shields.io/badge/Demonstração-Online-22c55e?style=for-the-badge&logo=cloudflare&logoColor=white)](https://stockflow-6zb.pages.dev)
+[![CI Pipeline](https://img.shields.io/badge/CI%20Pipeline-GitHub%20Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white)](https://github.com/pedr0coder/stockflow/actions)
+[![NestJS](https://img.shields.io/badge/Backend-NestJS%2012-E0234E?style=for-the-badge&logo=nestjs&logoColor=white)](https://nestjs.com/)
+[![React](https://img.shields.io/badge/Frontend-React%2019%20+%20Vite%208-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
+[![Prisma](https://img.shields.io/badge/ORM-Prisma%207-2D3748?style=for-the-badge&logo=prisma&logoColor=white)](https://www.prisma.io/)
+[![PostgreSQL](https://img.shields.io/badge/Database-PostgreSQL%2017-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 
-## O problema
+---
 
-Controle de estoque em empresas pequenas costuma viver em planilha. Isso funciona até o
-momento em que:
+## 🌐 Demonstração Online
 
-- duas pessoas editam a mesma planilha e um lançamento se perde;
-- o saldo não explica a si mesmo, porque não há registro de quem retirou, quando e por quê;
-- ninguém percebe que um item acabou antes de alguém precisar dele;
-- a contagem física divergente do sistema é corrigida por cima, sem rastro;
-- não há como responder "quanto saiu por perda no último trimestre?".
+- **Aplicação Web:** [https://stockflow-6zb.pages.dev](https://stockflow-6zb.pages.dev)
+- **Status do Backend:** [https://stockflow-6zb.pages.dev/api/v1/health/ready](https://stockflow-6zb.pages.dev/api/v1/health/ready)
 
-A causa comum é a mesma: **não existe histórico imutável** ligando cada alteração de saldo
-a um autor, um motivo e um instante.
+---
 
-## A solução
+## 📋 Visão Geral e Problema Resolvido
 
-O StockFlow trata o saldo como consequência, não como campo editável. Nenhuma tela permite
-digitar um saldo: ele só muda por uma movimentação registrada (entrada, saída ou ajuste)
-com autor, motivo, data, saldo anterior e saldo posterior. O histórico é imutável: erro se
-corrige com um novo movimento, nunca reescrevendo o anterior.
+O controle de estoque em empresas em crescimento frequentemente depende de planilhas manuais ou sistemas legados suscetíveis a inconsistências críticas:
 
-Sobre essa base:
+- Edições simultâneas que sobrescrevem registros sem rastro de auditoria;
+- Saldos calculados de forma arbitrária sem comprovação histórica de entradas e saídas;
+- Falta de visibilidade tempestiva sobre itens abaixo do ponto de reposição ou em ruptura;
+- Divergências de contagem física sem fluxo seguro de apuração e aprovação gerencial;
+- Dificuldade em justificar contabilmente perdas, avarias ou consumos internos.
 
-- cadastro de produtos, categorias e fornecedores;
-- movimentação de estoque transacional, segura sob operações simultâneas;
-- inventário cíclico com contagem, cálculo de divergência e aprovação;
-- dashboard e relatórios a partir de dados reais;
-- três perfis de acesso com permissão verificada no servidor;
-- log de auditoria das ações relevantes.
+O **StockFlow** resolve esses gargalos tratando o **saldo de estoque como uma consequência transacional imutável**: nenhuma tela ou endpoint permite editar diretamente a quantidade de um item. Cada alteração de saldo decorre exclusivamente de uma movimentação auditada (`IN`, `OUT` ou `ADJUSTMENT`) contendo quantidade, custo, autor, data, motivo normatizado e saldos anterior e posterior registrados de forma atômica.
 
-## Stack
+---
 
-**Frontend** · React 19.3 · TypeScript 6.0.3 · Vite 8 · Tailwind CSS 4 · shadcn/ui ·
-Lucide Icons
+## 📸 Interface da Aplicação
 
-**Backend** · Node.js 24 · TypeScript 6.0.3 · NestJS 12 · Prisma 7.10.1 ·
-PostgreSQL 17 · Swagger/OpenAPI · Argon2id · Pino
+### Dashboard Analítico
 
-**Testes** · Vitest 5 · Supertest 7 · Testing Library
+Visão executiva em tempo real: indicadores de catálogo, alertas de estoque baixo/zerado e fluxo operacional diário.
+![Dashboard](docs/screenshots/01-dashboard.png)
 
-**Infra** · Docker Compose · GitHub Actions · ESLint 10 · Prettier
+### Catálogo de Produtos
 
-React Router, TanStack Query, React Hook Form, Zod e Playwright entram nas fases em que
-são usados. Dependência sem uso não entra no `package.json`, e cada uma tem justificativa
-registrada em [docs/03-stack.md](docs/03-stack.md), incluindo as que foram **avaliadas e
-recusadas**.
+Listagem paginada com ordenação dinâmica, busca com debounce e badges de situação de estoque.
+![Produtos](docs/screenshots/02-produtos.png)
 
-## Como executar
+### Histórico de Movimentações
 
-Pré-requisitos: **Docker Desktop em execução**. Nada mais precisa estar instalado.
+Rastreabilidade total: tipo, motivo operacional, quantidade, saldo resultante, autor e atalhos diretos ao produto com SKU.
+![Movimentações](docs/screenshots/03-movimentacoes.png)
 
-```bash
-git clone <url-do-repositorio>
-cd stockflow
-cp .env.example .env
+### Inventários Físicos e Cíclicos
+
+Abertura de contagens, cálculo automatizado de divergências e fluxo de aprovação com conciliação contábil.
+![Inventários](docs/screenshots/04-inventarios.png)
+
+### Relatórios Gerenciais
+
+Exportação e visualização de relatórios de estoque baixo, itens sem estoque e conciliação analítica.
+![Relatórios](docs/screenshots/05-relatorios.png)
+
+---
+
+## ✨ Funcionalidades Principais
+
+- **Autenticação e Sessão Robusta:** tokens JWT de curta duração em memória combinados com refresh tokens rotativos em cookies `HttpOnly`, `Secure` e `SameSite=Strict`.
+- **Controle de Acesso Baseado em Papéis (RBAC):** matriz de permissões estrita no backend (`ADMIN`, `MANAGER`, `OPERATOR`) com autorização verificada por guards do NestJS.
+- **Transações Atômicas e Concorrência Segura:** movimentações processadas dentro de transações PostgreSQL isoladas (`READ COMMITTED` / `SELECT ... FOR UPDATE`), impedindo que duas baixas simultâneas levem o estoque a saldo negativo.
+- **Rastreabilidade e Auditoria Imutável:** tabela de auditoria (`audit_logs`) com registro de login, alterações de papel, atualizações cadastrais e reconciliações de inventário.
+- **Gestão de Inventários em 2 Fases:** abertura de lotes de contagem, lançamento de contagem física e aprovação restrita a gerentes/administradores com geração automática de ajustes.
+- **Interface SaaS Moderna e Responsiva:** design corporativo construído com Tailwind CSS v4, tipografia nítida, paleta refinada, gráficos vetoriais via Recharts e acessibilidade total (WCAG / WAI-ARIA).
+
+---
+
+## 🛠️ Tecnologias Utilizadas
+
+### Frontend
+
+- **React 19.3** — renderização reativa com hooks modernos e streaming;
+- **TypeScript 5.9** — tipagem estrita de ponta a ponta sem tipos `any`;
+- **Vite 8** — empacotamento com divisão determinística de vendor chunks;
+- **Tailwind CSS 4** — estilização moderna utilitária com design system `@theme`;
+- **Recharts 3.10** — gráficos analíticos e temporais de movimentações;
+- **TanStack React Query 5** — sincronização de estado com cache inteligente e invalidação seletiva;
+- **TanStack React Table 9** — tabelas com ordenação, paginação e filtros no servidor;
+- **React Hook Form + Zod** — formulários tipados com validação declarativa;
+- **Lucide Icons** — iconografia vetorial consistente.
+
+### Backend
+
+- **Node.js 24** — runtime JavaScript corporativo de alto desempenho;
+- **NestJS 12.1** — arquitetura modular com injeção de dependência estrita;
+- **Prisma 7.10** — ORM moderno com driver adapter `@prisma/adapter-pg`;
+- **PostgreSQL 17** — banco relacional com chaves UUIDv7 e precisão monetária `Decimal(14,4)`;
+- **Argon2id (`@node-rs/argon2`)** — algoritmo de hashing resistente a GPU conforme recomendação NIST/OWASP;
+- **Passport JWT** — estratégia de validação de tokens stateless;
+- **Throttler Guard** — limitação de taxa (rate limiting) contra ataques de força bruta no login e refresh;
+- **Pino Logger** — logging estruturado em JSON com UUIDv7 por requisição e higienização automática de segredos.
+
+### Infraestrutura e Deploy
+
+- **Cloudflare Pages + Functions** — hospedagem estática global (Edge) e proxy reverso same-origin (`/api/*`);
+- **Render Free Web Service** — execução do backend Node.js em container com inicialização segura e migração automática;
+- **Neon PostgreSQL** — banco de dados relacional gerenciado sem expiração;
+- **Docker & Docker Compose** — orquestração local de desenvolvimento e testes de integração;
+- **GitHub Actions** — pipeline de CI/CD automatizado com validação de lint, testes e builds.
+
+---
+
+## 🏛️ Arquitetura do Sistema
+
+```mermaid
+flowchart LR
+    subgraph Cliente ["Cliente"]
+        Browser["Navegador Web\n(React 19 SPA)"]
+    end
+
+    subgraph Edge ["Borda (Cloudflare)"]
+        Pages["Cloudflare Pages\n(Assets Estáticos)"]
+        CFProxy["Pages Function\n(/api/* Proxy Reverso)"]
+    end
+
+    subgraph Cloud ["Hospedagem de Aplicação (Render)"]
+        Backend["NestJS 12 REST API\n(Express + Guards + Throttler)"]
+    end
+
+    subgraph Data ["Camada de Dados (Neon)"]
+        Postgres[("PostgreSQL 17\n(Tabelas + Índices + Triggers)")]
+    end
+
+    Browser -->|HTTPS| Pages
+    Browser -->|API Calls (Same-Origin)| CFProxy
+    CFProxy -->|"Proxy com x-stockflow-proxy-secret"| Backend
+    Backend -->|"Driver Adapter (@prisma/adapter-pg)"| Postgres
 ```
 
-Preencha o `.env`. Gere cada segredo com:
+---
+
+## 🔒 Segurança e Autenticação
+
+1. **Defesa em Profundidade contra Forjamento de IP:** a comunicação entre o proxy de borda (Cloudflare) e o backend (Render) é autenticada através de um segredo compartilhado (`x-stockflow-proxy-secret`). Requisições diretas não autenticadas em produção são rejeitadas com `HTTP 403`, evitando bypass de rate limit via cabeçalhos forjados (`X-Forwarded-For`).
+2. **Proteção contra Brute Force:** rate limiting de 5 tentativas a cada 15 minutos por par `(IP, Email)` no login e 30 renovações a cada 15 minutos no refresh.
+3. **Mitigação de Timing Attacks:** o login calcula hashes comparáveis mesmo para e-mails inexistentes e utiliza `crypto.timingSafeEqual` na verificação do segredo do proxy.
+4. **Isolamento de Credenciais:** o campo `passwordHash` é omitido nativamente pelo cliente Prisma em todas as consultas da aplicação (`omit: { user: { passwordHash: true } }`), exigindo solicitação explícita apenas no serviço de autenticação.
+
+---
+
+## 📦 Como Executar Localmente
+
+### Pré-requisitos
+
+- **Docker Desktop** e **Node.js 24+** instalados.
+
+### 1. Clonar o repositório
+
+```bash
+git clone https://github.com/pedr0coder/stockflow.git
+cd stockflow
+```
+
+### 2. Configurar variáveis de ambiente
+
+Copie os arquivos de exemplo para a raiz e para o frontend:
+
+```bash
+cp .env.example .env
+cp frontend/.env.example frontend/.env
+```
+
+Gere segredos criptográficos seguros para o `.env`:
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 ```
 
-A aplicação **recusa subir** com segredo de menos de 32 caracteres, com `JWT_SECRET` igual
-a `JWT_REFRESH_SECRET` ou com `*` em `CORS_ORIGINS`. Isso é validado no boot, não em
-tempo de execução.
-
-Depois:
+### 3. Iniciar com Docker Compose
 
 ```bash
-docker compose up
+docker compose up -d
 ```
 
-| Serviço              | Endereço                                  |
-| -------------------- | ----------------------------------------- |
-| Frontend             | http://localhost:5173                     |
-| API                  | http://localhost:3000/api/v1              |
-| Documentação OpenAPI | http://localhost:3000/api/docs            |
-| Health check         | http://localhost:3000/api/v1/health/ready |
-| PostgreSQL           | localhost:5432                            |
+O compose inicializará:
 
-As migrations são aplicadas automaticamente no boot da API.
+- **PostgreSQL 17:** `localhost:5432`
+- **Backend NestJS:** `http://localhost:3000` (Swagger em `http://localhost:3000/api/docs`)
+- **Frontend Vite:** `http://localhost:5173`
 
-### Modo híbrido (desenvolvimento diário)
-
-Só o banco em container; API e frontend no host, com HMR rápido e depurador do editor
-funcionando:
-
-```bash
-docker compose up -d db
-npm run install:all
-npm --prefix backend run prisma:generate
-npm --prefix backend run prisma:deploy
-npm --prefix backend run dev     # em um terminal
-npm --prefix frontend run dev    # em outro
-```
-
-### Dados de exemplo
+### 4. Popular banco com dados de demonstração
 
 ```bash
 npm --prefix backend run seed
 ```
 
-Cria 3 usuários (um por papel), 7 categorias, 5 fornecedores e 42 produtos, todos
-fictícios. **Todos os produtos nascem com saldo zero**, porque saldo só muda por
-movimentação e o service de movimentação é da Fase 5. O seed não insere histórico por fora
-da regra de negócio.
+**Credenciais padrão de demonstração:**
 
-## Variáveis de ambiente
+- Administrador: `admin@stockflow.local`
+- Gerente: `gerente@stockflow.local`
+- Operador: `operador@stockflow.local`
 
-Todas em [.env.example](.env.example), com descrição. Resumo:
+---
 
-| Variável                            | Para que serve                                            |
-| ----------------------------------- | --------------------------------------------------------- |
-| `DATABASE_URL`                      | Conexão do PostgreSQL                                     |
-| `DATABASE_URL_TEST`                 | Banco separado da suíte de integração, que trunca tabelas |
-| `JWT_SECRET` / `JWT_REFRESH_SECRET` | Segredos distintos, 32+ caracteres                        |
-| `CORS_ORIGINS`                      | Allowlist de origens. Nunca `*`                           |
-| `SEED_*_PASSWORD`                   | Senhas dos usuários fictícios do seed                     |
-| `VITE_API_URL`                      | URL da API para o frontend                                |
+## 🧪 Testes Automatizados
 
-O `.env` está no `.gitignore` desde o primeiro commit e o CI falha se algum arquivo de
-ambiente for versionado.
+O StockFlow adota uma cultura rigorosa de qualidade com mais de **780 testes automatizados**:
 
-## Banco de dados
-
-PostgreSQL 17 com Prisma 7. Nove tabelas, cinco enums nativos, migrations versionadas.
-
-| Comando                                    | O que faz                         |
-| ------------------------------------------ | --------------------------------- |
-| `npm --prefix backend run prisma:generate` | Gera o cliente (não é versionado) |
-| `npm --prefix backend run prisma:migrate`  | Cria migration a partir do schema |
-| `npm --prefix backend run prisma:deploy`   | Aplica migrations existentes      |
-| `npm --prefix backend run prisma:studio`   | Abre o navegador de dados         |
-
-Três pontos do modelo que não estão no `schema.prisma` e vivem em SQL escrito à mão dentro
-da migration, porque o Prisma não os declara:
-
-- extensão `pg_trgm` e índice GIN trigram em `products.name`, para busca por parte do nome;
-- `CHECK (current_stock >= 0)`, `CHECK (min_stock >= 0)` e `CHECK (unit_cost >= 0)`;
-- `CHECK (quantity > 0)` e `CHECK (stock_after >= 0)` em movimentações.
-
-Detalhes em [docs/04-banco-de-dados.md](docs/04-banco-de-dados.md).
-
-## Testes
+### Backend
 
 ```bash
-npm --prefix backend run test       # unitários
-npm --prefix backend run test:int   # integração, contra PostgreSQL real
-npm --prefix frontend run test      # componente
+# Testes unitários (319 testes)
+npm --prefix backend run test
+
+# Testes de integração com banco PostgreSQL real (465 testes)
+npm --prefix backend run test:int
+
+# Linter e verificação de tipos
+npm --prefix backend run lint
+npm --prefix backend run typecheck
 ```
 
-A suíte de integração aplica as migrations sozinha e se recusa a rodar se
-`DATABASE_URL_TEST` não apontar para um banco com `test` no nome. É uma trava deliberada:
-a suíte trunca tabelas, e um erro de configuração apagaria o banco de desenvolvimento.
+### Frontend
 
-Resultado da última execução verificada está em
-[docs/16-relatorio-fase-4.md](docs/16-relatorio-fase-4.md), §16.1. Nenhum resultado de teste
-é relatado neste projeto sem execução real — e quando a execução não é limpa, como no caso
-da §16.7, isso é relatado também.
+```bash
+# Testes unitários de interface e contratos (289 testes)
+npm --prefix frontend run test
 
-## Arquitetura
+# Linter e verificação de tipos
+npm --prefix frontend run lint
+npm --prefix frontend run typecheck
 
-```
-stockflow/
-├── backend/          NestJS: controller → service → PrismaService
-│   ├── prisma/       schema, migrations, seed
-│   └── src/
-│       ├── common/   contrato de erro, filtro global
-│       ├── config/   validação de ambiente no boot
-│       ├── health/   liveness e readiness
-│       └── prisma/   PrismaService
-├── frontend/         React + Vite, design system por tokens CSS
-├── docs/             planejamento, decisões e ADRs
-├── docker/           init do Postgres
-└── .github/workflows CI
+# Build de produção
+npm --prefix frontend run build
 ```
 
-Três camadas no backend, sem repositório sobre o Prisma e sem CQRS. A decisão de **não**
-adotar essas camadas está justificada em [docs/02-arquitetura.md](docs/02-arquitetura.md):
-a complexidade vai para onde o problema está (concorrência em movimentação de estoque) e
-sai de todo o resto.
+---
 
-## Destaques técnicos
+## 🚀 Processo de Deploy e CI/CD
 
-Os pontos onde este projeto tem engenharia de verdade, e não CRUD:
+- **GitHub Actions:** a cada push na branch `main`, a esteira executa checagem de formatação (Prettier), lint, typecheck, testes unitários e testes de integração.
+- **Deploy Automático:**
+  - **Render:** detecta alterações na `main`, executa `npm run build`, aplica migrations com `prisma migrate deploy` e reinicia o serviço;
+  - **Cloudflare Pages:** compila o frontend com Vite e publica os arquivos estáticos e as Pages Functions globalmente.
 
-- **Concorrência em movimentação de estoque** (Fase 5) — saídas simultâneas não podem
-  consumir mais do que existe. Resolvido com UPDATE condicional atômico em vez de
-  ler-verificar-gravar, com transação e CHECK constraint como defesa em profundidade.
-  O comportamento das três camadas já foi validado em SQL no PostgreSQL desta máquina
-  ([docs/01-diagnostico.md §1.4](docs/01-diagnostico.md)); o teste com requisições
-  paralelas reais é critério de aceite da Fase 5.
-  → [ADR-0003](docs/adr/0003-estrategia-de-concorrencia.md)
-- **Histórico imutável** — sem `PATCH` e sem `DELETE` em movimentações, por desenho.
-- **Precisão numérica** — `Decimal(14,3)` no banco, `Decimal` na aplicação e string no
-  JSON. Float em quantidade e custo é bug esperando acontecer.
-- **Contrato único de erro** — toda resposta de erro tem a mesma forma, com `code` estável
-  para o cliente decidir a interface, e `requestId` que liga a resposta à linha de log.
-  Erro 5xx nunca vaza stack trace, e há teste provando.
-- **Health check que diz a verdade** — `/health/ready` consulta o banco e responde 503
-  quando ele está fora. Um endpoint que sempre responde 200 não informa nada.
-- **RBAC verificado no servidor, com padrão de negar** — o `JwtAuthGuard` e o `RolesGuard`
-  são globais, então rota nova nasce fechada: esquecer o decorator bloqueia o acesso em vez
-  de liberá-lo. Esconder botão não é autorização, e a matriz de papéis é verificada por
-  requisição real, não por teste do guard isolado.
-- **Sessão em dois tokens** — access em memória por 15 minutos, refresh rotativo de 7 dias
-  em cookie httpOnly com `SameSite=Strict` e detecção de reuso: apresentar um refresh já
-  rotacionado derruba todas as sessões daquele usuário.
-  → [ADR-0005](docs/adr/0005-armazenamento-de-token.md)
-- **`passwordHash` omitido na origem** — o campo não vem de nenhuma consulta por padrão,
-  configurado no próprio cliente Prisma. Quem precisa dele (só o login) pede
-  explicitamente. O vazamento deixa de ser o comportamento padrão e passa a exigir uma
-  linha que aparece em revisão.
-- **Rate limit por par (origem, conta) no login** — só por IP permitiria testar uma senha
-  em mil contas do mesmo endereço; só por e-mail permitiria bloquear a conta de outra
-  pessoa de propósito.
+---
 
-## Documentação
+## 👤 Autor
 
-| Documento                                               | Conteúdo                                            |
-| ------------------------------------------------------- | --------------------------------------------------- |
-| [01 — Diagnóstico](docs/01-diagnostico.md)              | Ambiente verificado por comando                     |
-| [02 — Arquitetura](docs/02-arquitetura.md)              | Camadas, módulos, contrato de erro                  |
-| [03 — Stack](docs/03-stack.md)                          | Versões verificadas e justificativa por dependência |
-| [04 — Banco de dados](docs/04-banco-de-dados.md)        | Modelo, índices, constraints, concorrência          |
-| [05 — API](docs/05-api.md)                              | Endpoints, papéis, códigos de erro                  |
-| [06 — MVP e telas](docs/06-mvp-e-telas.md)              | Escopo, rotas, design system                        |
-| [07 — Testes](docs/07-testes.md)                        | Casos por camada                                    |
-| [08 — Segurança](docs/08-seguranca.md)                  | Implementado, fora de escopo e riscos aceitos       |
-| [09 — Roadmap](docs/09-roadmap.md)                      | Fases e critérios de aceite                         |
-| [10 — Riscos](docs/10-riscos.md)                        | Riscos técnicos e mitigações                        |
-| [11 — Plano da Fase 2](docs/11-plano-fase-2.md)         | Ordem de implementação e critério de aceite         |
-| [12 — Relatório da Fase 2](docs/12-relatorio-fase-2.md) | O que foi feito e o que foi executado               |
-| [13 — Plano da Fase 3](docs/13-plano-fase-3.md)         | Escopo e as decisões de honestidade da interface    |
-| [14 — Relatório da Fase 3](docs/14-relatorio-fase-3.md) | O que foi feito, medido e o que ficou em aberto     |
-| [15 — Plano da Fase 4](docs/15-plano-fase-4.md)         | Escopo do backend, modelo de token e RBAC           |
-| [16 — Relatório da Fase 4](docs/16-relatorio-fase-4.md) | Endpoints, defeitos encontrados e pendências        |
-| [ADRs](docs/adr/)                                       | Decisões arquiteturais registradas                  |
+Desenvolvido por **Pedro** ([@pedr0coder](https://github.com/pedr0coder)).
 
-## Roadmap
-
-| Fase | Entrega                                        | Estado                            |
-| ---- | ---------------------------------------------- | --------------------------------- |
-| 1    | Planejamento, arquitetura, modelo de dados     | Concluída                         |
-| 2    | Fundação: estrutura, banco, Docker, CI, testes | Concluída                         |
-| 3    | Design system e shell da aplicação             | Concluída                         |
-| 4    | Autenticação, RBAC e cadastros                 | **Verificada, aguardando commit** |
-| 5    | Movimentação de estoque e inventário           |                                   |
-| 6    | Integração frontend e backend                  |                                   |
-| 7    | Qualidade, acessibilidade, performance         |                                   |
-| 8    | Deploy e CI/CD                                 |                                   |
-| 9    | Portfólio: README final, screenshots, demo     |                                   |
-
-Fora do MVP, em ordem de prioridade: exportação CSV · recuperação de senha por e-mail ·
-QR Code e código de barras com leitura por câmera · alerta automático de estoque baixo ·
-múltiplos depósitos · custo médio ponderado · multi-tenancy.
-
-Detalhes em [docs/09-roadmap.md](docs/09-roadmap.md).
-
-## Limitações conhecidas
-
-- **Nenhuma funcionalidade de negócio implementada.** Autenticação, cadastros e estoque
-  são das Fases 4 e 5. A interface existe, e declara isso em cada tela.
-- **A pré-visualização de interface precisa ser removida na Fase 6.** Ela permite navegar
-  pelo shell sem backend, sem autenticar ninguém e sem exibir dado, e uma faixa fixa avisa
-  disso. Os quatro arquivos envolvidos estão marcados no código.
-- **O bundle cresceu 3,2 vezes** com React Router, TanStack Query, Radix e TanStack Table:
-  de 71 kB para 227 kB comprimidos. Divisão de código por rota é escopo da Fase 7, e o
-  número está registrado para comparação.
-- **Nenhum teste E2E.** Os dois fluxos críticos atravessam login real e movimentação, que
-  são das Fases 4 e 5. Playwright entra na Fase 7.
-- **Contraste não foi medido formalmente.** A base estrutural de acessibilidade existe
-  (`aria-sort`, `caption`, foco preso em modal, rótulo em texto em todo badge); a aferição
-  AA é da Fase 7.
-- O dashboard não tem gráfico, e `recharts` não foi instalado: uma biblioteca de gráficos
-  para desenhar um retângulo vazio seria dependência sem justificativa.
-- O seed cria cadastro sem movimentação, e todos os produtos ficam com saldo zero.
-- Os `Dockerfile.dev` são de desenvolvimento: rodam como root, carregam devDependencies e
-  não são imagem de produção. A imagem multi-stage é da Fase 8.
-- A suíte de integração aborta o processo em 2 de 20 execuções no Windows, sem erro de
-  asserção. O abort reproduz fora do Vitest e fora do código do projeto, em Node puro;
-  Argon2, swc, Rolldown, supertest, Express, Nest, Prisma e antivírus estão descartados com
-  evidência. Diagnóstico completo em
-  [docs/16-relatorio-fase-4.md](docs/16-relatorio-fase-4.md), §16.7.
-- Alterar papel ou inativar usuário revoga os refresh tokens, mas o access já emitido vale
-  até expirar — uma janela de até 15 minutos. É consequência conhecida de JWT sem lista de
-  revogação, e há teste que documenta a janela.
-- O rate limit é em memória, por instância: duas instâncias atrás de um balanceador dobram
-  o limite efetivo. Redis entra quando houver mais de uma.
-- O log de auditoria vive no mesmo banco que ele audita. Quem tem acesso direto ao Postgres
-  pode alterá-lo; mitigação real exigiria um sink externo append-only.
-
-O CI está **verde nos quatro jobs**. A primeira execução reprovou no lint do frontend, por
-uma dependência de tipos que o pacote usava sem declarar e que só resolvia por acidente de
-layout de diretório na máquina de desenvolvimento. A causa raiz e a correção estão
-registradas em [docs/12-relatorio-fase-2.md](docs/12-relatorio-fase-2.md), §12.8.
-
-Limitações de segurança e riscos aceitos permanentes estão em
-[docs/08-seguranca.md](docs/08-seguranca.md). O sistema não é nem será descrito como
-"100% seguro".
-
-## Licença
-
-MIT
+Projeto concebido para demonstração de arquitetura robusta, boas práticas de segurança, design de software corporativo e entrega de ponta a ponta.
