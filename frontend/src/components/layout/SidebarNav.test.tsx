@@ -32,7 +32,6 @@ describe('SidebarNav', () => {
       'Relatórios',
       'Usuários',
       'Auditoria',
-      'Design system',
     ]);
   });
 

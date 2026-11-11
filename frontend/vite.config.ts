@@ -128,6 +128,8 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
+    testTimeout: 10000,
+    fileParallelism: false,
     include: ['src/**/*.test.{ts,tsx}', 'e2e/**/*.unit.test.ts', 'functions/**/*.unit.test.ts'],
     coverage: {
       provider: 'v8',

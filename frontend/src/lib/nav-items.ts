@@ -4,7 +4,6 @@ import {
   FileText,
   LayoutDashboard,
   Package,
-  Palette,
   ScrollText,
   Shapes,
   Truck,
@@ -133,23 +132,6 @@ export const NAV_GROUPS: readonly NavGroup[] = [
         label: 'Auditoria',
         icon: ScrollText,
         roles: ADMIN_ONLY,
-        deliveredInPhase: null,
-      },
-    ],
-  },
-  {
-    label: 'Projeto',
-    items: [
-      {
-        /**
-         * Vitrine do design system. Não é tela de negócio: é o catálogo dos
-         * componentes e dos quatro estados, e some quando houver telas reais
-         * exercitando os mesmos componentes.
-         */
-        to: '/design-system',
-        label: 'Design system',
-        icon: Palette,
-        roles: ALL_ROLES,
         deliveredInPhase: null,
       },
     ],

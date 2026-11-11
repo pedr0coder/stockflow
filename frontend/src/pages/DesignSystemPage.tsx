@@ -121,9 +121,9 @@ export function DesignSystemPage(): ReactNode {
       <p className="flex items-start gap-2 rounded-(--radius-md) border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
         <Info aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
         <span>
-          Esta tela demonstra componentes. Os registros exibidos abaixo são exemplos do componente
-          de tabela, não dados do sistema. O StockFlow ainda não tem produtos nem movimentações:
-          isso é entrega das Fases 4 e 5.
+          Esta tela demonstra os componentes de interface e seus estados. Os registros exibidos
+          abaixo são dados simulados para validação visual dos componentes, e não representam o
+          estoque real do sistema.
         </span>
       </p>
 
