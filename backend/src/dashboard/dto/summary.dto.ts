@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class DashboardSummaryDto {
   @ApiProperty()
@@ -34,6 +34,9 @@ export class RecentMovementDto {
 
   @ApiProperty()
   productName!: string;
+
+  @ApiPropertyOptional()
+  productSku?: string;
 
   @ApiProperty()
   type!: string;

@@ -41,6 +41,7 @@ export class DashboardService {
       id: row.id,
       productId: row.product_id,
       productName: row.product_name,
+      ...(row.product_sku !== undefined ? { productSku: row.product_sku } : {}),
       type: row.type,
       reason: row.reason,
       quantity: formatDecimalField(row.quantity, 'quantity'),

@@ -21,6 +21,7 @@ export interface RecentMovement {
   id: string;
   productId: string;
   productName: string;
+  productSku?: string;
   type: MovementType;
   reason: string;
   quantity: string;

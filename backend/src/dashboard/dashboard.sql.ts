@@ -48,6 +48,7 @@ export interface RecentMovementRow {
   id: string;
   product_id: string;
   product_name: string;
+  product_sku: string;
   type: string;
   reason: string;
   quantity: Prisma.Decimal;
@@ -61,7 +62,7 @@ export function readRecentMovements(
   limit: number,
 ): Promise<RecentMovementRow[]> {
   return prisma.$queryRaw<RecentMovementRow[]>`
-    SELECT sm.id::text, sm.product_id::text, p.name AS product_name, sm.type::text, sm.reason::text,
+    SELECT sm.id::text, sm.product_id::text, p.name AS product_name, p.sku AS product_sku, sm.type::text, sm.reason::text,
            sm.quantity, sm.stock_after, u.name AS user_name, sm.created_at
       FROM stock_movements sm
       JOIN products p ON p.id = sm.product_id

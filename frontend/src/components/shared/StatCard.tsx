@@ -31,12 +31,26 @@ export interface StatCardProps {
   /** Destaque semântico do valor. Acompanhado de texto, nunca cor sozinha. */
   tone?: 'default' | 'warning' | 'danger';
   className?: string;
+  /** Descrição auxiliar exibida abaixo do valor (quando hint não estiver no state). */
+  description?: string;
 }
 
-const TONE_CLASS: Readonly<Record<NonNullable<StatCardProps['tone']>, string>> = {
+const TONE_VALUE_CLASS: Readonly<Record<NonNullable<StatCardProps['tone']>, string>> = {
   default: 'text-foreground',
-  warning: 'text-(--color-warning)',
-  danger: 'text-destructive',
+  warning: 'text-amber-600 dark:text-amber-400',
+  danger: 'text-rose-600 dark:text-rose-400',
+};
+
+const TONE_ICON_CONTAINER: Readonly<Record<NonNullable<StatCardProps['tone']>, string>> = {
+  default: 'bg-primary/10 text-primary border-primary/20',
+  warning: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
+  danger: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20',
+};
+
+const TONE_CARD_BORDER: Readonly<Record<NonNullable<StatCardProps['tone']>, string>> = {
+  default: 'border-t-2 border-t-primary/70',
+  warning: 'border-t-2 border-t-amber-500',
+  danger: 'border-t-2 border-t-rose-500',
 };
 
 export function StatCard({
@@ -45,34 +59,56 @@ export function StatCard({
   state,
   tone = 'default',
   className,
+  description,
 }: StatCardProps): ReactNode {
   return (
-    // Card estático recebe borda, não sombra. Ver §6.4.
-    <Card className={cn('border shadow-none', className)}>
-      <CardContent className="flex flex-col gap-3 p-5">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-sm font-medium text-muted-foreground">{label}</span>
-          <Icon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+    <Card
+      className={cn(
+        'relative overflow-hidden border bg-card shadow-xs transition-colors hover:border-foreground/20',
+        TONE_CARD_BORDER[tone],
+        className,
+      )}
+    >
+      <CardContent className="flex flex-col justify-between gap-4 p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              {label}
+            </span>
+          </div>
+          <div
+            className={cn(
+              'flex size-9 shrink-0 items-center justify-center rounded-lg border',
+              TONE_ICON_CONTAINER[tone],
+            )}
+          >
+            <Icon aria-hidden="true" className="size-4.5" />
+          </div>
         </div>
 
         {state.status === 'loading' ? (
-          <div aria-busy="true" aria-live="polite">
+          <div aria-busy="true" aria-live="polite" className="flex flex-col gap-2 pt-1">
             <span className="sr-only">Carregando {label}</span>
-            <Skeleton className="h-8 w-24" />
+            <Skeleton className="h-9 w-28" />
+            <Skeleton className="h-4 w-36" />
           </div>
         ) : null}
 
         {state.status === 'empty' ? (
-          <p className="text-sm text-muted-foreground">{state.reason}</p>
+          <div className="pt-1">
+            <p className="text-sm text-muted-foreground">{state.reason}</p>
+          </div>
         ) : null}
 
         {state.status === 'ready' ? (
-          <div className="flex flex-col gap-0.5">
-            <span className={cn('font-mono text-2xl font-semibold', TONE_CLASS[tone])}>
+          <div className="flex flex-col gap-1 pt-0.5">
+            <span
+              className={cn('font-mono text-3xl font-bold tracking-tight', TONE_VALUE_CLASS[tone])}
+            >
               {state.value}
             </span>
-            {state.hint ? (
-              <span className="text-xs text-muted-foreground">{state.hint}</span>
+            {(state.hint ?? description) ? (
+              <span className="text-xs text-muted-foreground">{state.hint ?? description}</span>
             ) : null}
           </div>
         ) : null}
