@@ -141,7 +141,7 @@ export function MovementsPage(): ReactNode {
       id: 'user',
       header: 'Responsável',
       enableSorting: false,
-      cell: ({ row }) => row.original.user.name,
+      cell: ({ row }) => row.original.user?.name ?? '—',
     },
   ];
 
@@ -287,7 +287,7 @@ export function MovementsPage(): ReactNode {
               </div>
               <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
                 <span>
-                  {formatDateTime(row.createdAt)} · {row.user.name}
+                  {formatDateTime(row.createdAt)} · {row.user?.name ?? '—'}
                 </span>
                 <span className="font-mono">Saldo: {formatQuantity(row.stockAfter)}</span>
               </div>

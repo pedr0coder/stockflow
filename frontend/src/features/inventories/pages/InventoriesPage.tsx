@@ -81,7 +81,7 @@ export function InventoriesPage(): ReactNode {
       id: 'createdBy',
       header: 'Aberto por',
       enableSorting: false,
-      cell: ({ row }) => row.original.createdBy.name,
+      cell: ({ row }) => row.original.createdBy?.name ?? '—',
     },
     {
       id: 'approvedBy',
@@ -151,7 +151,7 @@ export function InventoriesPage(): ReactNode {
               </Badge>
             </div>
             <span className="text-xs text-muted-foreground">
-              Iniciado em {formatDate(row.startedAt)} · Aberto por {row.createdBy.name}
+              Iniciado em {formatDate(row.startedAt)} · Aberto por {row.createdBy?.name ?? '—'}
             </span>
             {row.approvedBy ? (
               <span className="text-xs text-muted-foreground">

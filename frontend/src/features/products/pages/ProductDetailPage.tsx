@@ -80,7 +80,7 @@ export function ProductDetailPage(): ReactNode {
       id: 'user',
       header: 'Responsável',
       enableSorting: false,
-      cell: ({ row }) => row.original.user.name,
+      cell: ({ row }) => row.original.user?.name ?? '—',
     },
   ];
 

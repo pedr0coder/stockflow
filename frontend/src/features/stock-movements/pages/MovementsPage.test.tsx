@@ -110,6 +110,21 @@ describe('MovementsPage', () => {
     expect(cardLink).toHaveAttribute('href', '/products/p1');
   });
 
+  it('renderiza com segurança quando dados de usuário ou produto vêm ausentes', async () => {
+    const movimentoIncompleto = {
+      ...MOVIMENTO,
+      product: undefined,
+      user: undefined,
+    };
+    mockApi(page([movimentoIncompleto]));
+
+    renderWithProviders(<MovementsPage />);
+
+    const table = await findTable();
+    expect(table.getByText('Ver produto')).toBeInTheDocument();
+    expect(table.getByText('—')).toBeInTheDocument();
+  });
+
   it('estado vazio quando não há movimentação', async () => {
     mockApi(page([]));
 

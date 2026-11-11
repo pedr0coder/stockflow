@@ -96,4 +96,19 @@ describe('InventoriesPage', () => {
 
     expect(screen.queryByRole('link', { name: /novo inventário/i })).not.toBeInTheDocument();
   });
+
+  it('renderiza com segurança quando createdBy ou approvedBy vêm ausentes', async () => {
+    const inventarioSemAutor = {
+      ...INVENTARIO,
+      createdBy: undefined,
+      approvedBy: undefined,
+    };
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(200, page([inventarioSemAutor])));
+
+    renderWithProviders(<InventoriesPage />);
+
+    const table = await findTable();
+    expect(table.getByText('INV-2026-0001')).toBeInTheDocument();
+    expect(table.getAllByText('—').length).toBeGreaterThan(0);
+  });
 });

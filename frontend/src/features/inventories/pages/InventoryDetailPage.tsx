@@ -285,7 +285,7 @@ export function InventoryDetailPage(): ReactNode {
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Aberto por</p>
-            <p>{inventory.createdBy.name}</p>
+            <p>{inventory.createdBy?.name ?? '—'}</p>
           </div>
         </CardContent>
       </Card>

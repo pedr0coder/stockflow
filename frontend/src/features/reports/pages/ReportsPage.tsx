@@ -214,7 +214,7 @@ export function ReportsPage(): ReactNode {
       header: 'Diferença',
       enableSorting: false,
       cell: ({ row }) => {
-        const isZero = Number.parseFloat(row.original.difference) === 0;
+        const isZero = Number.parseFloat(row.original.difference ?? '0') === 0;
 
         return (
           <span className={isZero ? 'font-mono' : 'font-mono text-(--color-danger)'}>
