@@ -84,6 +84,32 @@ describe('MovementsPage', () => {
     expect(cards.getByRole('link', { name: 'Ver produto' })).toBeInTheDocument();
   });
 
+  it('exibe o nome real do produto e o SKU em destaque clicável na tabela e nos cards', async () => {
+    const movimentoComProduto = {
+      ...MOVIMENTO,
+      product: { id: 'p1', name: 'Parafuso Sextavado M8', sku: 'PAR-0001' },
+    };
+    mockApi(page([movimentoComProduto]));
+
+    renderWithProviders(<MovementsPage />);
+
+    const table = await findTable();
+    expect(table.getByText('Parafuso Sextavado M8')).toBeInTheDocument();
+    expect(table.getByText('PAR-0001')).toBeInTheDocument();
+    const tableLink = table.getByRole('link', {
+      name: 'Ver produto: Parafuso Sextavado M8 (PAR-0001)',
+    });
+    expect(tableLink).toHaveAttribute('href', '/products/p1');
+
+    const cards = within(screen.getByRole('list'));
+    expect(cards.getByText('Parafuso Sextavado M8')).toBeInTheDocument();
+    expect(cards.getByText('PAR-0001')).toBeInTheDocument();
+    const cardLink = cards.getByRole('link', {
+      name: 'Ver produto: Parafuso Sextavado M8 (PAR-0001)',
+    });
+    expect(cardLink).toHaveAttribute('href', '/products/p1');
+  });
+
   it('estado vazio quando não há movimentação', async () => {
     mockApi(page([]));
 

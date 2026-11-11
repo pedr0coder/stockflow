@@ -10,6 +10,18 @@ export class MovementUserDto {
   name!: string;
 }
 
+/** Produto movimentado, só o necessário para identificação e navegação rápida (docs/05-api.md §5.7). */
+export class MovementProductDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  name!: string;
+
+  @ApiProperty()
+  sku!: string;
+}
+
 /**
  * Movimentação como a API a devolve.
  *
@@ -24,6 +36,9 @@ export class MovementDto {
 
   @ApiProperty()
   productId!: string;
+
+  @ApiPropertyOptional({ type: MovementProductDto })
+  product?: MovementProductDto;
 
   @ApiProperty({ enum: MovementType })
   type!: MovementType;

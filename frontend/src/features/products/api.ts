@@ -63,6 +63,11 @@ export interface ProductInput {
 export interface ProductMovement {
   id: string;
   productId: string;
+  product?: {
+    id: string;
+    name: string;
+    sku: string;
+  };
   type: MovementType;
   reason: string;
   quantity: string;

@@ -1,5 +1,5 @@
 import type { SortingState } from '@tanstack/react-table';
-import { Boxes, Plus } from 'lucide-react';
+import { ArrowUpRight, Boxes, Plus } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { DataTable, type DataTableColumn } from '@/components/shared/DataTable';
@@ -81,11 +81,34 @@ export function MovementsPage(): ReactNode {
       id: 'product',
       header: 'Produto',
       enableSorting: false,
-      cell: ({ row }) => (
-        <Link to={`/products/${row.original.productId}`} className="hover:underline">
-          Ver produto
-        </Link>
-      ),
+      cell: ({ row }) => {
+        const movement = row.original;
+        const productName = movement.product?.name ?? 'Ver produto';
+        const productSku = movement.product?.sku;
+
+        return (
+          <div className="flex flex-col">
+            <Link
+              to={`/products/${movement.productId}`}
+              className="group inline-flex items-center gap-1 rounded-sm font-medium text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              aria-label={
+                movement.product
+                  ? `Ver produto: ${movement.product.name}${movement.product.sku ? ` (${movement.product.sku})` : ''}`
+                  : 'Ver produto'
+              }
+            >
+              <span>{productName}</span>
+              <ArrowUpRight
+                aria-hidden="true"
+                className="size-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground"
+              />
+            </Link>
+            {productSku ? (
+              <span className="font-mono text-xs text-muted-foreground">{productSku}</span>
+            ) : null}
+          </div>
+        );
+      },
     },
     {
       accessorKey: 'type',
@@ -227,31 +250,50 @@ export function MovementsPage(): ReactNode {
           description: 'Entradas, saídas e ajustes aparecem aqui assim que forem lançados.',
           icon: Boxes,
         }}
-        renderCard={(row) => (
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center justify-between gap-2">
-              <MovementTypeBadge type={row.type} />
-              <span className="font-mono text-sm font-medium">{formatQuantity(row.quantity)}</span>
+        renderCard={(row) => {
+          const productName = row.product?.name ?? 'Ver produto';
+          const productSku = row.product?.sku;
+
+          return (
+            <div className="flex flex-col gap-2">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex flex-col">
+                  <Link
+                    to={`/products/${row.productId}`}
+                    className="group inline-flex items-center gap-1 rounded-sm text-sm font-medium text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    aria-label={
+                      row.product
+                        ? `Ver produto: ${row.product.name}${row.product.sku ? ` (${row.product.sku})` : ''}`
+                        : 'Ver produto'
+                    }
+                  >
+                    <span>{productName}</span>
+                    <ArrowUpRight
+                      aria-hidden="true"
+                      className="size-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground"
+                    />
+                  </Link>
+                  {productSku ? (
+                    <span className="font-mono text-xs text-muted-foreground">{productSku}</span>
+                  ) : null}
+                </div>
+                <MovementTypeBadge type={row.type} />
+              </div>
+              <div className="flex items-center justify-between gap-2 text-sm">
+                <span>{REASON_LABEL[row.reason as MovementReasonValue] ?? row.reason}</span>
+                <span className="font-mono text-sm font-medium">
+                  {formatQuantity(row.quantity)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                <span>
+                  {formatDateTime(row.createdAt)} · {row.user.name}
+                </span>
+                <span className="font-mono">Saldo: {formatQuantity(row.stockAfter)}</span>
+              </div>
             </div>
-            <div className="flex items-center justify-between gap-2 text-sm">
-              <span>{REASON_LABEL[row.reason as MovementReasonValue] ?? row.reason}</span>
-              <span className="font-mono text-xs text-muted-foreground">
-                Saldo: {formatQuantity(row.stockAfter)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-              <span>
-                {formatDateTime(row.createdAt)} · {row.user.name}
-              </span>
-              <Link
-                to={`/products/${row.productId}`}
-                className="font-medium text-foreground hover:underline"
-              >
-                Ver produto
-              </Link>
-            </div>
-          </div>
-        )}
+          );
+        }}
         {...(hasFilters ? { onClearFilters: clearFilters } : {})}
         state={
           isPending

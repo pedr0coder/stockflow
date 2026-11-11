@@ -30,8 +30,11 @@ import {
   readProductState,
 } from './stock-movements.sql';
 
-/** Inclusão padrão: o autor, só o necessário para exibição. */
-const WITH_USER = { user: { select: { id: true, name: true } } } as const;
+/** Inclusão padrão: o autor e o produto, só o necessário para exibição e navegação. */
+const WITH_RELATIONS = {
+  user: { select: { id: true, name: true } },
+  product: { select: { id: true, name: true, sku: true } },
+} as const;
 
 /** Transação do ADR-0003: nível declarado explicitamente, não herdado do padrão do driver. */
 const MOVEMENT_TX_OPTIONS = {
@@ -109,7 +112,7 @@ export class StockMovementsService {
             note: dto.note,
             ...(dto.referenceDoc !== undefined ? { referenceDoc: dto.referenceDoc } : {}),
           },
-          include: WITH_USER,
+          include: WITH_RELATIONS,
         });
 
         await this.audit.recordInTransaction(tx, {
@@ -147,7 +150,7 @@ export class StockMovementsService {
   async findOne(id: string): Promise<MovementDto> {
     const movement = await this.prisma.stockMovement.findUnique({
       where: { id },
-      include: WITH_USER,
+      include: WITH_RELATIONS,
     });
 
     if (!movement) {
@@ -192,7 +195,7 @@ export class StockMovementsService {
             ...(dto.note !== undefined ? { note: dto.note } : {}),
             ...(dto.referenceDoc !== undefined ? { referenceDoc: dto.referenceDoc } : {}),
           },
-          include: WITH_USER,
+          include: WITH_RELATIONS,
         });
 
         await this.audit.recordInTransaction(tx, {
@@ -279,7 +282,7 @@ export class StockMovementsService {
         orderBy: [{ [sort]: query.sort === undefined ? 'desc' : query.order }, { id: 'desc' }],
         skip,
         take,
-        include: WITH_USER,
+        include: WITH_RELATIONS,
       }),
       this.prisma.stockMovement.count({ where }),
     ]);
