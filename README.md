@@ -111,25 +111,25 @@ Exportação e visualização de relatórios de estoque baixo, itens sem estoque
 
 ```mermaid
 flowchart LR
-    subgraph Cliente ["Cliente"]
-        Browser["Navegador Web\n(React 19 SPA)"]
+    subgraph Cliente["Cliente"]
+        Browser["Navegador Web<br/>(React 19 SPA)"]
     end
 
-    subgraph Edge ["Borda (Cloudflare)"]
-        Pages["Cloudflare Pages\n(Assets Estáticos)"]
-        CFProxy["Pages Function\n(/api/* Proxy Reverso)"]
+    subgraph Edge["Borda (Cloudflare)"]
+        Pages["Cloudflare Pages<br/>(Assets Estáticos)"]
+        CFProxy["Pages Function<br/>(/api/* Proxy Reverso)"]
     end
 
-    subgraph Cloud ["Hospedagem de Aplicação (Render)"]
-        Backend["NestJS 12 REST API\n(Express + Guards + Throttler)"]
+    subgraph Cloud["Hospedagem de Aplicação (Render)"]
+        Backend["NestJS 12 REST API<br/>(Express + Guards + Throttler)"]
     end
 
-    subgraph Data ["Camada de Dados (Neon)"]
-        Postgres[("PostgreSQL 17\n(Tabelas + Índices + Triggers)")]
+    subgraph Data["Camada de Dados (Neon)"]
+        Postgres[("PostgreSQL 17<br/>(Tabelas + Índices + Triggers)")]
     end
 
-    Browser -->|HTTPS| Pages
-    Browser -->|API Calls (Same-Origin)| CFProxy
+    Browser -->|"HTTPS"| Pages
+    Browser -->|"API Calls (Same-Origin)"| CFProxy
     CFProxy -->|"Proxy com x-stockflow-proxy-secret"| Backend
     Backend -->|"Driver Adapter (@prisma/adapter-pg)"| Postgres
 ```
