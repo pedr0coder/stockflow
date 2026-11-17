@@ -158,7 +158,7 @@ export async function uiLogin(page: Page, email: string, options?: UiLoginOption
     }
     await emailInput.fill(email);
     await passwordInput.fill(seedPasswordFor(email));
-    await page.getByRole('button', { name: 'Entrar' }).click();
+    await page.getByRole('button', { name: 'Entrar', exact: true }).click();
 
     const normalizedEmail = email.trim().toLowerCase();
     const allowedRoutePattern =

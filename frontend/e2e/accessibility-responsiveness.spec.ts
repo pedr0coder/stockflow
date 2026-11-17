@@ -140,7 +140,7 @@ test.describe('Marco 7C — Acessibilidade WCAG 2.2 AA, Responsividade e Teclado
     await waitForPageReady(page);
     await assertNoAxeViolations(page, '/login (inicial)');
 
-    const loginSubmitBtn = page.getByRole('button', { name: 'Entrar' });
+    const loginSubmitBtn = page.getByRole('button', { name: 'Entrar', exact: true });
     await loginSubmitBtn.click();
     await loginSubmitBtn.hover();
     await expect(page.getByRole('alert').first()).toBeVisible();
