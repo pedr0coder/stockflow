@@ -115,3 +115,8 @@ export function setProductStatus(id: string, isActive: boolean): Promise<Product
     body: JSON.stringify({ isActive }),
   });
 }
+
+/** `DELETE /products/:id` — exclusão simulada no sandbox de demonstração (Fase 9). */
+export function deleteProduct(id: string): Promise<void> {
+  return request<void>(`/products/${id}`, { method: 'DELETE' });
+}

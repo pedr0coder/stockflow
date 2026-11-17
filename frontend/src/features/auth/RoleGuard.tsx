@@ -40,7 +40,7 @@ export function RoleGuard({ roles }: RoleGuardProps): ReactNode {
     throw new Error('RoleGuard precisa estar dentro de uma rota protegida por sessão.');
   }
 
-  if (!roles.includes(user.role)) {
+  if (user.isDemo === true || !roles.includes(user.role)) {
     return <ForbiddenPage />;
   }
 

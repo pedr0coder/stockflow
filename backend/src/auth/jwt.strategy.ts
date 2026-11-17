@@ -4,7 +4,10 @@ import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import type { AuthenticatedUser } from '../common/decorators/current-user.decorator';
 import { EnvironmentVariables } from '../config/env.validation';
+import { UserRole } from '../generated/prisma/enums';
 import type { AccessTokenPayload } from './token.service';
+
+const VALID_ROLES = new Set<string>([UserRole.ADMIN, UserRole.MANAGER, UserRole.OPERATOR]);
 
 /**
  * Validação do access token.
@@ -39,10 +42,15 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
    * `@CurrentUser()` entrega ao handler.
    */
   validate(payload: AccessTokenPayload): AuthenticatedUser {
-    if (!payload.sub || !payload.role || !payload.jti) {
-      // Token assinado por nós mas sem os campos esperados: ou é de uma versão
-      // antiga do formato, ou foi adulterado de forma que a assinatura ainda
-      // confere. Em qualquer caso, não dá para confiar nele.
+    if (
+      !payload.sub ||
+      !payload.role ||
+      !payload.jti ||
+      payload.sub === 'demo-visitor' ||
+      !VALID_ROLES.has(payload.role)
+    ) {
+      // Token assinado por nós mas sem os campos esperados, ou com identidade de
+      // demonstração: em qualquer caso, não dá para confiar nele no servidor.
       throw new UnauthorizedException();
     }
 

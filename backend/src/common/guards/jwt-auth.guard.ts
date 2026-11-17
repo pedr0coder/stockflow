@@ -1,4 +1,5 @@
-import { ExecutionContext, Injectable } from '@nestjs/common';
+import { ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import type { Request } from 'express';
 import type { Observable } from 'rxjs';
 import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
@@ -29,6 +30,12 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
 
     if (isPublic === true) {
       return true;
+    }
+
+    const request = context.switchToHttp().getRequest<Request | undefined>();
+    const demoHeader = request?.headers?.['x-demo-mode'] ?? request?.headers?.['x-visitor-mode'];
+    if (demoHeader !== undefined) {
+      throw new UnauthorizedException();
     }
 
     return super.canActivate(context);

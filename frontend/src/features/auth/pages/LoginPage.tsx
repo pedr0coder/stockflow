@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Play } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { useLocation, useNavigate } from 'react-router';
@@ -7,8 +7,10 @@ import { FormField } from '@/components/shared/FormField';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Separator } from '@/components/ui/separator';
 import { useAuth } from '@/features/auth/auth-context';
 import { loginSchema, type LoginFormValues } from '@/features/auth/schemas';
+import { DemoEntryModal } from '@/features/demo/components/DemoEntryModal';
 import { ApiError } from '@/lib/api-client';
 
 /**
@@ -16,16 +18,17 @@ import { ApiError } from '@/lib/api-client';
  *
  * Formulário real: valida com Zod, mostra erro junto ao campo, bloqueia
  * envio inválido e, ao submeter, chama `POST /auth/login` de verdade
- * (`AuthProvider.signIn`). A pré-visualização de interface da Fase 3 foi
- * removida nesta fase, como `docs/14-relatorio-fase-3.md §14.10.3` já previa.
+ * (`AuthProvider.signIn`). Também oferece entrada segura no Modo Demonstração
+ * interativo (Fase 9) sem exigir credenciais.
  */
 export function LoginPage(): ReactNode {
   const navigate = useNavigate();
   const location = useLocation();
-  const { signIn } = useAuth();
+  const { signIn, enterDemoMode } = useAuth();
 
   const [showPassword, setShowPassword] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [demoModalOpen, setDemoModalOpen] = useState(false);
 
   const {
     register,
@@ -141,6 +144,37 @@ export function LoginPage(): ReactNode {
             </p>
           ) : null}
         </form>
+
+        <div className="flex flex-col gap-3">
+          <div className="relative flex items-center justify-center">
+            <Separator />
+            <span className="bg-card px-2 text-xs text-muted-foreground">ou</span>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full gap-2"
+            onClick={() => {
+              setDemoModalOpen(true);
+            }}
+          >
+            <Play aria-hidden="true" className="size-4 text-primary" />
+            Entrar sem login (Demo)
+          </Button>
+          <p className="text-center text-xs text-muted-foreground">
+            Explore o sistema em modo demonstração interativo sem precisar de credenciais.
+          </p>
+        </div>
+
+        <DemoEntryModal
+          open={demoModalOpen}
+          onOpenChange={setDemoModalOpen}
+          onConfirm={(visitorName) => {
+            enterDemoMode?.(visitorName);
+            void navigate('/dashboard', { replace: true });
+          }}
+        />
       </CardContent>
     </Card>
   );

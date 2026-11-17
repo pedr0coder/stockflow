@@ -102,6 +102,20 @@ export function setSessionExpiredHandler(handler: SessionExpiredHandler | null):
 }
 
 /**
+ * Interceptor opcional para o Modo Demonstração (Fase 9).
+ *
+ * Registrado por `demo-sandbox.ts` apenas enquanto há sessão de visitante ativa:
+ * desvia chamadas de negócio para o sandbox em memória/sessionStorage sem tocar
+ * na rede (`fetch`) e sem introduzir dependência circular no módulo HTTP.
+ */
+type DemoRequestInterceptor = <T>(path: string, init: RequestInit) => Promise<T>;
+let demoInterceptor: DemoRequestInterceptor | null = null;
+
+export function setDemoRequestInterceptor(interceptor: DemoRequestInterceptor | null): void {
+  demoInterceptor = interceptor;
+}
+
+/**
  * Rotas de autenticação nunca passam pelo interceptor de 401 delas mesmas:
  * sem esta exclusão, um 401 de `/auth/login` (credencial errada) tentaria
  * renovar a sessão antes de reportar a credencial errada, e um 401 de
@@ -131,6 +145,10 @@ interface AuthTokenPayload {
 let refreshPromise: Promise<AuthTokenPayload> | null = null;
 
 async function performRefresh(): Promise<AuthTokenPayload> {
+  if (demoInterceptor !== null) {
+    throw new ApiError(401, 'UNAUTHORIZED', 'Sessão de demonstração não utiliza refresh token.');
+  }
+
   const generationAtStart = tokenGeneration;
 
   const response = await fetch(`${API_BASE}/auth/refresh`, {
@@ -205,6 +223,10 @@ export async function request<T>(
   init: RequestInit = {},
   options: RequestOptions = {},
 ): Promise<T> {
+  if (demoInterceptor !== null && path !== '/auth/login') {
+    return demoInterceptor<T>(path, init);
+  }
+
   const headers = new Headers(init.headers);
 
   if (!headers.has('Content-Type') && init.body !== undefined) {

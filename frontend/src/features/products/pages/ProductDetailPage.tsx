@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Link, useParams } from 'react-router';
+import { Link, useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { DataTable, type DataTableColumn } from '@/components/shared/DataTable';
@@ -16,6 +16,7 @@ import { useAuth } from '@/features/auth/auth-context';
 import { useCategoryQuery } from '@/features/categories/queries';
 import type { ProductMovement } from '@/features/products/api';
 import {
+  useDeleteProductMutation,
   useProductMovementsQuery,
   useProductQuery,
   useSetProductStatusMutation,
@@ -31,8 +32,10 @@ import { UNIT_LABEL } from '@/features/products/api';
 export function ProductDetailPage(): ReactNode {
   const { id } = useParams<{ id: string }>();
   const productId = id ?? '';
+  const navigate = useNavigate();
   const { user } = useAuth();
   const canManage = user?.role === 'ADMIN' || user?.role === 'MANAGER';
+  const isDemo = user?.isDemo === true;
 
   const [movementsPage, setMovementsPage] = useState(0);
 
@@ -41,6 +44,7 @@ export function ProductDetailPage(): ReactNode {
   const supplierQuery = useSupplierQuery(product?.supplierId ?? '');
   const movementsQuery = useProductMovementsQuery(productId, { page: movementsPage + 1 });
   const setStatusMutation = useSetProductStatusMutation();
+  const deleteMutation = useDeleteProductMutation();
 
   const movementColumns: DataTableColumn<ProductMovement>[] = [
     {
@@ -146,6 +150,30 @@ export function ProductDetailPage(): ReactNode {
                   }
                 }}
               />
+              {isDemo ? (
+                <ConfirmDialog
+                  trigger={
+                    <Button variant="outline" className="text-destructive">
+                      Excluir
+                    </Button>
+                  }
+                  title={`Excluir o produto ${product.name}?`}
+                  description="Esta exclusão é simulada e remove o item apenas desta sessão de demonstração."
+                  destructive
+                  onConfirm={async () => {
+                    try {
+                      await deleteMutation.mutateAsync(product.id);
+                      await navigate('/products', { replace: true });
+                    } catch (err) {
+                      toast.error(
+                        err instanceof ApiError
+                          ? messageForCode(err.code, err.message)
+                          : 'Não foi possível excluir o produto.',
+                      );
+                    }
+                  }}
+                />
+              ) : null}
             </div>
           ) : undefined
         }

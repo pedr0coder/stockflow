@@ -139,9 +139,13 @@ export const NAV_GROUPS: readonly NavGroup[] = [
 ];
 
 /** Itens visíveis para um papel, preservando os grupos e descartando os vazios. */
-export function navGroupsForRole(role: UserRole): NavGroup[] {
-  return NAV_GROUPS.map((group) => ({
-    ...group,
-    items: group.items.filter((item) => item.roles.includes(role)),
-  })).filter((group) => group.items.length > 0);
+export function navGroupsForRole(role: UserRole, options?: { isDemo?: boolean }): NavGroup[] {
+  const isDemo = options?.isDemo === true;
+
+  return NAV_GROUPS.filter((group) => !(isDemo && group.label === 'Administração'))
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => item.roles.includes(role)),
+    }))
+    .filter((group) => group.items.length > 0);
 }

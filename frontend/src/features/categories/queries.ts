@@ -31,10 +31,16 @@ export function useCategoryQuery(id: string) {
  * ou a categoria pode ter sido desativada por outra pessoa entre a leitura e
  * o clique.
  */
-function useInvalidateCategories() {
+function useInvalidateCategories(id?: string) {
   const queryClient = useQueryClient();
 
-  return () => queryClient.invalidateQueries({ queryKey: queryKeys.categories.lists() });
+  return () => {
+    void queryClient.invalidateQueries({ queryKey: queryKeys.categories.lists() });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.products.lists() });
+    if (id !== undefined) {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.categories.detail(id) });
+    }
+  };
 }
 
 export function useCreateCategoryMutation() {
@@ -47,21 +53,29 @@ export function useCreateCategoryMutation() {
 }
 
 export function useUpdateCategoryMutation() {
-  const invalidate = useInvalidateCategories();
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: ({ id, input }: { id: string; input: Partial<CategoryInput> }) =>
       updateCategory(id, input),
-    onSuccess: () => invalidate(),
+    onSuccess: (_result, { id }) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.categories.lists() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.categories.detail(id) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.products.lists() });
+    },
   });
 }
 
 export function useSetCategoryStatusMutation() {
-  const invalidate = useInvalidateCategories();
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
       setCategoryStatus(id, isActive),
-    onSuccess: () => invalidate(),
+    onSuccess: (_result, { id }) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.categories.lists() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.categories.detail(id) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.products.lists() });
+    },
   });
 }

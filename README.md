@@ -15,6 +15,7 @@
 
 - **Aplicação Web:** [https://stockflow-6zb.pages.dev](https://stockflow-6zb.pages.dev)
 - **Status do Backend:** [https://stockflow-6zb.pages.dev/api/v1/health/ready](https://stockflow-6zb.pages.dev/api/v1/health/ready)
+- **Modo Demonstração Interativo (Sem Login):** Clique em **"Entrar sem login (Demo)"** na tela inicial, informe seu nome ou apelido e explore todas as operações de catálogo, movimentações, inventários e relatórios em uma sandbox isolada por sessão, sem alterar o banco de dados real.
 
 ---
 

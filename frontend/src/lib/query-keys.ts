@@ -46,6 +46,7 @@ export const queryKeys = {
   stockMovements: domain('stock-movements'),
   inventories: domain('inventories'),
   reports: {
+    all: ['reports'] as const,
     lowStock: () => ['reports', 'low-stock'] as const,
     outOfStock: () => ['reports', 'out-of-stock'] as const,
     movements: (params: { dateFrom?: string; dateTo?: string }) =>

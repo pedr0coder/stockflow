@@ -26,6 +26,8 @@ export type NavLabelVisibility = 'visible' | 'responsive' | 'hidden';
 export interface SidebarNavProps {
   role: UserRole;
   labels: NavLabelVisibility;
+  /** Verdadeiro durante o modo demonstração para ocultar o grupo Administração. */
+  isDemo?: boolean | undefined;
   /** Chamado ao navegar, para o drawer fechar em tela estreita. */
   onNavigate?: () => void;
 }
@@ -57,8 +59,8 @@ const GROUP_TITLE_CLASS: Readonly<Record<NavLabelVisibility, string>> = {
  * │ Fase 4.                                                                  │
  * └──────────────────────────────────────────────────────────────────────────┘
  */
-export function SidebarNav({ role, labels, onNavigate }: SidebarNavProps): ReactNode {
-  const groups = navGroupsForRole(role);
+export function SidebarNav({ role, labels, isDemo, onNavigate }: SidebarNavProps): ReactNode {
+  const groups = navGroupsForRole(role, { isDemo: isDemo === true });
   const iconOnly = labels === 'hidden';
 
   return (

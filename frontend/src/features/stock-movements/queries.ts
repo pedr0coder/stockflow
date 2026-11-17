@@ -44,6 +44,7 @@ function useInvalidateAfterMovement() {
     });
     void queryClient.invalidateQueries({ queryKey: queryKeys.stockMovements.lists() });
     void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.reports.all });
   };
 }
 

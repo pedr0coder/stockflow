@@ -33,6 +33,7 @@ export function useOpenInventoryMutation() {
     mutationFn: (input: { productIds: string[]; note?: string }) => openInventory(input),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.inventories.lists() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.reports.all });
     },
   });
 }
@@ -45,6 +46,8 @@ export function useCountItemMutation(inventoryId: string) {
       countItem(inventoryId, itemId, countedQty),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(inventoryId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.inventories.lists() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.reports.all });
     },
   });
 }
@@ -57,6 +60,7 @@ export function useSubmitInventoryMutation(id: string) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(id) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.inventories.lists() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.reports.all });
     },
   });
 }
@@ -64,7 +68,7 @@ export function useSubmitInventoryMutation(id: string) {
 /**
  * Aprovar muda o saldo de todo produto ajustado — invalida a lista de
  * produtos e o detalhe/histórico de cada um (não só o inventário), além do
- * dashboard, igual a uma movimentação comum (docs/18-plano-fase-6.md §18.8).
+ * dashboard e movimentações, igual a uma movimentação comum (docs/18-plano-fase-6.md §18.8).
  */
 export function useApproveInventoryMutation(id: string) {
   const queryClient = useQueryClient();
@@ -75,7 +79,9 @@ export function useApproveInventoryMutation(id: string) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(id) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.inventories.lists() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.products.lists() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.stockMovements.lists() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.reports.all });
 
       for (const adjustment of result.adjustments) {
         void queryClient.invalidateQueries({
@@ -98,6 +104,7 @@ export function useCancelInventoryMutation(id: string) {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.inventories.detail(id) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.inventories.lists() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.reports.all });
     },
   });
 }
