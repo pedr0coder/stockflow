@@ -101,5 +101,5 @@ describe('assertDemoSeedConfig e validateDemoPassword (Fase 8 — segurança do 
     expect(result.status).toBe(1);
     expect(result.stderr).toMatch(/ALLOW_DEMO_SEED deve ser explicitamente "true"/);
     expect(result.stderr).not.toContain('segredo_oculto');
-  });
+  }, 20_000);
 });

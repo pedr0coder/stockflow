@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   createProduct,
+  deleteProduct,
   getProduct,
   listProductMovements,
   listProducts,
@@ -39,6 +40,9 @@ function useInvalidateProducts(id?: string) {
 
   return () => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.products.lists() });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.reports.all });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.suppliers.all });
 
     if (id !== undefined) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.products.detail(id) });
@@ -73,6 +77,26 @@ export function useSetProductStatusMutation() {
     onSuccess: (_result, { id }) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.products.lists() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.products.detail(id) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.reports.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.suppliers.all });
+    },
+  });
+}
+
+export function useDeleteProductMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => deleteProduct(id),
+    onSuccess: (_result, id) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.products.lists() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.products.detail(id) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.stockMovements.lists() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.reports.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.inventories.lists() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.suppliers.all });
     },
   });
 }

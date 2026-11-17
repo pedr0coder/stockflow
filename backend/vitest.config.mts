@@ -24,6 +24,17 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/*.spec.ts', 'scripts/**/*.spec.ts', 'prisma/**/*.spec.ts'],
+    env: {
+      NODE_ENV: 'test',
+      PORT: '3000',
+      DATABASE_URL: 'postgresql://stockflow:test@localhost:5432/stockflow_test?schema=public',
+      JWT_SECRET: 'local_test_jwt_secret_with_more_than_32_characters_000',
+      JWT_REFRESH_SECRET: 'local_test_jwt_refresh_secret_with_more_than_32_chars_111',
+      JWT_ACCESS_TTL: '15m',
+      JWT_REFRESH_TTL: '7d',
+      CORS_ORIGINS: 'http://localhost:5173',
+      LOG_LEVEL: 'error',
+    },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],

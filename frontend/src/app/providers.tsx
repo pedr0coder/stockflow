@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Tooltip } from 'radix-ui';
 import { Toaster } from '@/components/ui/sonner';
 import { AuthProvider } from '@/features/auth/auth-provider';
+import { setDemoCacheResetListener } from '@/features/demo/demo-sandbox';
 
 /**
  * Providers da aplicação.
@@ -52,6 +53,18 @@ export function AppProviders({ children }: { children: ReactNode }): ReactNode {
   // um cliente por montagem da aplicação, o que mantém os testes isolados uns
   // dos outros.
   const [queryClient] = useState(createQueryClient);
+
+  useEffect(() => {
+    setDemoCacheResetListener(() => {
+      void queryClient.resetQueries();
+      void queryClient.invalidateQueries({ refetchType: 'all' });
+      void queryClient.refetchQueries({ type: 'all' });
+    });
+
+    return () => {
+      setDemoCacheResetListener(null);
+    };
+  }, [queryClient]);
 
   return (
     <QueryClientProvider client={queryClient}>

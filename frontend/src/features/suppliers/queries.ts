@@ -38,6 +38,7 @@ function useInvalidateSuppliers(id?: string) {
 
   return () => {
     void queryClient.invalidateQueries({ queryKey: queryKeys.suppliers.lists() });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.products.lists() });
 
     if (id !== undefined) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.suppliers.detail(id) });
@@ -72,6 +73,7 @@ export function useSetSupplierStatusMutation() {
     onSuccess: (_result, { id }) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.suppliers.lists() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.suppliers.detail(id) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.products.lists() });
     },
   });
 }

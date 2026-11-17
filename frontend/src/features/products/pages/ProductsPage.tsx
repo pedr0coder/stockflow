@@ -20,7 +20,11 @@ import type { SortingState } from '@tanstack/react-table';
 import { useAuth } from '@/features/auth/auth-context';
 import { useCategoriesQuery } from '@/features/categories/queries';
 import type { Product, StockStatusFilter } from '@/features/products/api';
-import { useProductsQuery, useSetProductStatusMutation } from '@/features/products/queries';
+import {
+  useDeleteProductMutation,
+  useProductsQuery,
+  useSetProductStatusMutation,
+} from '@/features/products/queries';
 import { ApiError } from '@/lib/api-client';
 import { messageForCode } from '@/lib/error-messages';
 import { formatQuantity } from '@/lib/format';
@@ -41,6 +45,7 @@ const ALL = 'all';
 export function ProductsPage(): ReactNode {
   const { user } = useAuth();
   const canManage = user?.role === 'ADMIN' || user?.role === 'MANAGER';
+  const isDemo = user?.isDemo === true;
 
   const [pageIndex, setPageIndex] = useState(0);
   const [sorting, setSorting] = useState<SortingState>([{ id: 'name', desc: false }]);
@@ -64,6 +69,7 @@ export function ProductsPage(): ReactNode {
     ...(stockStatusFilter !== ALL ? { stockStatus: stockStatusFilter } : {}),
   });
   const setStatusMutation = useSetProductStatusMutation();
+  const deleteMutation = useDeleteProductMutation();
 
   const hasFilters =
     debouncedSearch.length > 0 ||
@@ -173,6 +179,30 @@ export function ProductsPage(): ReactNode {
                       }
                     }}
                   />
+
+                  {isDemo ? (
+                    <ConfirmDialog
+                      trigger={
+                        <Button variant="ghost" size="sm" className="text-destructive">
+                          Excluir
+                        </Button>
+                      }
+                      title={`Excluir o produto ${product.name}?`}
+                      description="Esta exclusão é simulada e remove o item apenas desta sessão de demonstração."
+                      destructive
+                      onConfirm={async () => {
+                        try {
+                          await deleteMutation.mutateAsync(product.id);
+                        } catch (err) {
+                          toast.error(
+                            err instanceof ApiError
+                              ? messageForCode(err.code, err.message)
+                              : 'Não foi possível excluir o produto.',
+                          );
+                        }
+                      }}
+                    />
+                  ) : null}
                 </div>
               );
             },
@@ -344,6 +374,30 @@ export function ProductsPage(): ReactNode {
                     }
                   }}
                 />
+
+                {isDemo ? (
+                  <ConfirmDialog
+                    trigger={
+                      <Button variant="ghost" size="sm" className="text-destructive">
+                        Excluir
+                      </Button>
+                    }
+                    title={`Excluir o produto ${row.name}?`}
+                    description="Esta exclusão é simulada e remove o item apenas desta sessão de demonstração."
+                    destructive
+                    onConfirm={async () => {
+                      try {
+                        await deleteMutation.mutateAsync(row.id);
+                      } catch (err) {
+                        toast.error(
+                          err instanceof ApiError
+                            ? messageForCode(err.code, err.message)
+                            : 'Não foi possível excluir o produto.',
+                        );
+                      }
+                    }}
+                  />
+                ) : null}
               </div>
             ) : null}
           </div>

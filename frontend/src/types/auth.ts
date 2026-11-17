@@ -29,23 +29,24 @@ export interface AuthUser {
   name: string;
   email: string;
   role: UserRole;
+  /** Verdadeiro apenas quando a sessão é do modo demonstração interativo (Fase 9). */
+  isDemo?: boolean;
 }
 
 /**
  * Contrato do provedor de autenticação.
  *
  * Forma final, implementada pela Fase 6 (`features/auth/auth-provider.tsx`) contra a API
- * real. Até a Fase 5, existiu uma implementação de pré-visualização de interface
- * (`ui-preview-auth.tsx`, removida nesta fase) que satisfazia um contrato parecido sem
- * autenticar ninguém — o campo `isPreview` que a distinguia saiu daqui porque não há mais
- * nada para distinguir.
+ * real, e estendida na Fase 9 com suporte ao Modo Demonstração isolado no cliente.
  */
 export interface AuthContextValue {
   user: AuthUser | null;
   /** Verdadeiro enquanto a sessão ainda não foi determinada (boot: refresh + /me em andamento). */
   isLoading: boolean;
-  /** Verdadeiro quando há sessão. */
+  /** Verdadeiro quando há sessão (autenticada ou demonstração). */
   isAuthenticated: boolean;
+  /** Verdadeiro exclusivamente durante o modo demonstração (visitante). */
+  isDemo?: boolean;
   /**
    * Autentica contra `POST /auth/login`. Lança `ApiError` em credencial
    * inválida — quem chama decide a mensagem (a tela de login, com contexto).
@@ -58,4 +59,10 @@ export interface AuthContextValue {
    * chegou.
    */
   signOut: () => void;
+  /** Inicia uma sessão isolada de demonstração com o nome do visitante. */
+  enterDemoMode?: (visitorName: string) => void;
+  /** Restaura todos os dados fictícios da demonstração para o estado inicial. */
+  resetDemoMode?: () => void;
+  /** Sai do modo demonstração e limpa os dados temporários do visitante. */
+  exitDemoMode?: () => void;
 }
